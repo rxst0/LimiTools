@@ -1,5 +1,5 @@
 [app]
-title = Rolimons Ad Poster
+title = LimiTools
 package.name = rolimonsadposter
 package.domain = io.github.rxst0
 

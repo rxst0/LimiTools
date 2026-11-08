@@ -38,7 +38,7 @@ class Tray:
             item("Quit", lambda: self.on_action("quit")),
         )
         try:
-            self._icon = pystray.Icon("RolimonsAdPoster", Image.open(self.icon_path), self.title, menu)
+            self._icon = pystray.Icon("LimiTools", Image.open(self.icon_path), self.title, menu)
             self._icon.run_detached()
             return True
         except Exception as e:  # tray support depends on the desktop shell

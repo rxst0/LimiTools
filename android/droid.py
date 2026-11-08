@@ -68,7 +68,7 @@ class Engine:
             from jnius import autoclass  # type: ignore
             service = autoclass(SERVICE_CLASS)
             activity = autoclass("org.kivy.android.PythonActivity").mActivity
-            service.start(activity, "icon", "Rolimons Ad Poster", text, "")
+            service.start(activity, "icon", "LimiTools", text, "")
         elif text == POSTING_TEXT:
             import runner
             self._thread = threading.Thread(target=runner.run, args=(self.home,), daemon=True)

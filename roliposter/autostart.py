@@ -3,7 +3,8 @@ import sys
 from pathlib import Path
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = "RolimonsAdPoster"
+VALUE_NAME = "LimiTools"
+LEGACY_VALUE_NAMES = ("RolimonsAdPoster",)  # before the rename
 
 
 def launch_command() -> str:
@@ -22,6 +23,27 @@ def is_enabled() -> bool:
         return True
     except (ImportError, OSError):
         return False
+
+
+def migrate_legacy() -> None:
+    """Moves a "Start with Windows" entry from the app's old name to the new one (it points at the old
+    RoliAdPoster.exe, which the installer removes). Does nothing elsewhere or when there's none."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                            winreg.KEY_QUERY_VALUE | winreg.KEY_SET_VALUE) as key:
+            found = False
+            for name in LEGACY_VALUE_NAMES:
+                try:
+                    winreg.QueryValueEx(key, name)
+                except FileNotFoundError:
+                    continue
+                winreg.DeleteValue(key, name)
+                found = True
+            if found:
+                winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, launch_command())
+    except (ImportError, OSError):
+        pass
 
 
 def set_enabled(enabled: bool) -> None:

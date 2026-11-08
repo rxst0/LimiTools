@@ -37,7 +37,7 @@ def main() -> None:
     service.setAutoRestartService(True)
     # A partial wake lock keeps timers on schedule while the screen is off (the CPU otherwise sleeps).
     power = cast("android.os.PowerManager", service.getSystemService(Context.POWER_SERVICE))
-    wake = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RolimonsAdPoster::posting")
+    wake = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LimiTools::posting")
     wake.acquire()
     done = threading.Event()
 

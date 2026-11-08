@@ -1,8 +1,9 @@
-# Rolimons Ad Poster
+# LimiTools
 
-Automatically posts your [Rolimons](https://www.rolimons.com/trades) trade ads every ~15 minutes,
-rotating through ads you set up. It runs as a simple app on **Windows** and **Android**, so you don't need Python.
-Fully open source, with no servers involved: each device posts on its own.
+A toolkit for Roblox limiteds traders, on **Windows** and **Android** (no Python needed). It posts your [Rolimons](https://www.rolimons.com/trades) trade ads every ~15 minutes, shows your Roblox trades, tracks what your items are worth, and (optionally) auto-accepts good trades and gives AI trade suggestions.
+Fully open source, with no servers involved: everything runs on your own device.
+
+> **Unofficial.** LimiTools isn't made by, affiliated with or endorsed by Rolimons or Roblox. It was called *Rolimons Ad Poster* before version 1.8.0.
 
 > **Trades are view-only unless you turn on auto-accept:** it posts Rolimons trade ads and can *show* your
 > Roblox trades. It never declines, counters or sends Roblox trades. It only accepts one if you turn on
@@ -27,24 +28,24 @@ Fully open source, with no servers involved: each device posts on its own.
 
 ## Download (Windows)
 
-1. Go to [**Releases**](https://github.com/rxst0/rolimons-ad-poster/releases/latest) and download **`RolimonsAdPosterSetup.exe`**.
+1. Go to [**Releases**](https://github.com/rxst0/limitools/releases/latest) and download **`LimiToolsSetup.exe`**.
 2. Run it and click **Install**. No admin rights are needed.
-3. Open **Rolimons Ad Poster** from the Start Menu, Windows Search, or the desktop shortcut.
+3. Open **LimiTools** from the Start Menu, Windows Search, or the desktop shortcut.
 
-The app tells you when a new version is out. Run the new installer to update; your ads and cookie are kept.
-To uninstall, go to **Settings → Apps → Installed apps → Rolimons Ad Poster**. This also deletes your saved cookie.
+The app tells you when a new version is out. Run the new installer to update; your ads and cookie are kept (also when updating from Rolimons Ad Poster).
+To uninstall, go to **Settings → Apps → Installed apps → LimiTools**. This also deletes your saved cookie.
 
 **"Windows protected your PC"?** The app isn't code-signed, so Windows warns about it.
 Click **More info → Run anyway**. You can always read the source code here and build it yourself (see below).
 
-*Portable option:* download `RoliAdPoster.exe` instead and run it from any folder. It saves its settings next to itself.
+*Portable option:* download `LimiTools.exe` instead and run it from any folder. It saves its settings next to itself.
 
 ## Download (Android)
 
-1. On your phone, open [**Releases**](https://github.com/rxst0/rolimons-ad-poster/releases/latest) and download **`RolimonsAdPoster.apk`**.
+1. On your phone, open [**Releases**](https://github.com/rxst0/limitools/releases/latest) and download **`LimiTools.apk`**.
 2. Open the file. If Android asks, allow your browser to **install unknown apps**, then tap **Install**.
    Play Protect may warn because the app isn't from the Play Store; tap **More details → Install anyway**.
-3. Open **Rolimons Ad Poster**, tap **Sign in to Rolimons**, and log in and verify like on the website.
+3. Open **LimiTools**, tap **Sign in to Rolimons**, and log in and verify like on the website.
    The app picks up your cookie by itself, so there's nothing to copy.
 4. Add your ads and tap **Start posting**. A notification stays in your status bar while it posts, even with
    the screen off. You're notified when posting pauses (daily ad limit, posting hours, no internet), resumes
@@ -199,7 +200,7 @@ Be aware:
 | *Still on cooldown* | Normal. It waits and retries automatically. |
 | Network errors | It retries with growing delays (5s, 10s, 20s… up to 15 min). |
 
-Files the app keeps next to the `.exe` (installed version: `%LOCALAPPDATA%\Programs\Rolimons Ad Poster`):
+Files the app keeps next to the `.exe` (installed version: `%LOCALAPPDATA%\Programs\LimiTools`, or `...\Programs\Rolimons Ad Poster` if you first installed it under its old name):
 - `config.json`: your ads and settings
 - `.env`: your Rolimons cookie
 - `state.json`: post times and history, so a restart still respects the cooldown

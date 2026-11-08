@@ -17,7 +17,7 @@ from roliposter.startup import StartupError, prepare
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Rolimons trade ad auto-poster (Rolimons ads only).")
+    p = argparse.ArgumentParser(description="LimiTools command line: Rolimons trade ad auto-poster.")
     p.add_argument("--config", type=Path, default=config_path(), help="path to config.json")
     group = p.add_mutually_exclusive_group()
     group.add_argument("--check", action="store_true", help="validate everything, post nothing")

@@ -6,7 +6,7 @@ PKG=io.github.rxst0.rolimonsadposter
 OUT=shots
 mkdir -p "$OUT"
 
-if ! adb install -r -g apk/RolimonsAdPoster.apk 2>&1 | tee "$OUT/install.txt" | grep -q Success; then
+if ! adb install -r -g apk/LimiTools.apk 2>&1 | tee "$OUT/install.txt" | grep -q Success; then
   echo "APK failed to install"; exit 1
 fi
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS || true

@@ -5,7 +5,7 @@ import requests
 
 from . import __version__
 
-LATEST_RELEASE_API = "https://api.github.com/repos/rxst0/rolimons-ad-poster/releases/latest"
+LATEST_RELEASE_API = "https://api.github.com/repos/rxst0/limitools/releases/latest"
 
 
 def _parse(version: str) -> tuple[int, ...]:

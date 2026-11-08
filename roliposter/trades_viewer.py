@@ -22,7 +22,7 @@ TRADES_URL = "https://www.roblox.com/trades"
 GUARD_FILTER = "*trade*"
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 BLOCK_STATUS = 403
-BLOCK_REASON = "Blocked: Rolimons Ad Poster is view-only for trades"
+BLOCK_REASON = "Blocked: LimiTools is view-only for trades"
 
 log = logging.getLogger("roliposter.trades")
 
@@ -42,7 +42,7 @@ VIEW_ONLY_JS = r"""
       });
   };
   const banner = document.createElement('div');
-  banner.textContent = 'View only — accepting, declining and countering are turned off in Rolimons Ad Poster. Use roblox.com to respond to trades.';
+  banner.textContent = 'View only — accepting, declining and countering are turned off in LimiTools. Use roblox.com to respond to trades.';
   banner.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;padding:10px 16px;' +
     'background:#1e3a8a;color:#fff;font:600 13px Inter,Segoe UI,sans-serif;text-align:center;';
   const start = () => {

@@ -30,7 +30,7 @@ OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 MAX_CANDIDATES = 250  # market items sent besides your own (keeps each request to a few cents)
 TIMEOUT = 300
 
-SYSTEM_PROMPT = """You are a Roblox limited-items trading advisor inside the Rolimons Ad Poster app.
+SYSTEM_PROMPT = """You are a Roblox limited-items trading advisor inside the LimiTools app.
 You get the user's inventory and a slice of the Rolimons market as JSON. Suggest trades that improve the
 user's position over the coming weeks to months:
 - "upgrade": trade several lower-value items for fewer, higher-value items.

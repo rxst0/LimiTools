@@ -17,7 +17,7 @@ import java.util.Map;
  * roliposter/trades_viewer.py on the PC. Also re-applies the view-only banner script after each page.
  */
 public class ViewOnlyWebViewClient extends WebViewClient {
-    public static final String REASON = "Blocked: Rolimons Ad Poster is view-only for trades";
+    public static final String REASON = "Blocked: LimiTools is view-only for trades";
     public static volatile int blockedCount = 0;
 
     private final String pageScript;

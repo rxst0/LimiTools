@@ -1,4 +1,4 @@
-"""Rolimons Ad Poster - simple desktop app."""
+"""LimiTools - simple desktop app."""
 import copy
 import logging
 import queue
@@ -32,8 +32,8 @@ from roliposter.values import evaluate_ad
 
 log = logging.getLogger("roliposter.gui")
 
-APP_NAME = "Rolimons Ad Poster"
-REPO_URL = "https://github.com/rxst0/rolimons-ad-poster"
+APP_NAME = "LimiTools"
+REPO_URL = "https://github.com/rxst0/limitools"
 C = theme.COLORS
 THUMB_PX = 24
 INVENTORY_REFRESH_MS = 10 * 60 * 1000
@@ -99,6 +99,7 @@ FILES (next to the app)
   state.json   post times and history
   logs\\        a log of every post attempt
 
+LimiTools is unofficial: it isn't made by, affiliated with or endorsed by Rolimons or Roblox.
 Version {__version__} - {REPO_URL}
 """
 
@@ -108,7 +109,7 @@ def set_app_icon(root: tk.Tk) -> None:
     """Window/taskbar icon. The explicit AppUserModelID keeps the taskbar from grouping us under python.exe."""
     try:
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("rxst0.RolimonsAdPoster")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("rxst0.LimiTools")
     except (ImportError, AttributeError, OSError):
         pass
     icon = resource_path("assets/icon.ico")
@@ -833,6 +834,7 @@ class App(tk.Tk):
         super().__init__()
         self.withdraw()
         self.title(APP_NAME)
+        autostart.migrate_legacy()  # renamed from Rolimons Ad Poster
         set_app_icon(self)
         theme.apply_theme(self)
         self.geometry("1060x840")
@@ -1408,7 +1410,7 @@ class App(tk.Tk):
         self.banner_btn.config(command=lambda: webbrowser.open(url or REPO_URL + "/releases/latest"))
         self.banner.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         log.info("Update available: v%s (you have v%s).", version, __version__)
-        self.notify("update", "Update available", f"Rolimons Ad Poster {version} is available on GitHub.")
+        self.notify("update", "Update available", f"LimiTools {version} is available on GitHub.")
 
     def _clear_log(self) -> None:
         self.logbox.config(state="normal")
@@ -1455,10 +1457,10 @@ class App(tk.Tk):
             if kind == "stopped":
                 self._set_running(False)
                 if not self._user_stopped:
-                    self.notify(None, "Posting stopped", "Rolimons Ad Poster stopped posting. Open it to see why.")
+                    self.notify(None, "Posting stopped", "LimiTools stopped posting. Open it to see why.")
                 self.refresh_ads()
             elif kind == "error":
-                self.notify(None, "Rolimons Ad Poster", payload.split("\n")[0])
+                self.notify(None, APP_NAME, payload.split("\n")[0])
                 messagebox.showerror(APP_NAME, payload)
             elif kind == "history":  # no notification on the PC; the History tab just stays up to date
                 if self.current_tab == "history":

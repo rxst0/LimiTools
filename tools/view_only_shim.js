@@ -1,10 +1,10 @@
-// Added by Rolimons Ad Poster (tools/fetch_rovalra.py): keeps Roblox trades view-only.
+// Added by LimiTools (tools/fetch_rovalra.py): keeps Roblox trades view-only.
 // Requests from an extension's background worker don't pass through the app's own network block,
 // so this refuses every request that could change a trade (accept, decline, counter, send, cancel)
 // before it is sent. Reading trades is unaffected.
 (() => {
   const READ = new Set(["GET", "HEAD", "OPTIONS"]);
-  const REASON = "Blocked: Rolimons Ad Poster is view-only for trades";
+  const REASON = "Blocked: LimiTools is view-only for trades";
   const isTradeWrite = (url, method) => {
     if (READ.has(String(method || "GET").toUpperCase())) return false;
     try {

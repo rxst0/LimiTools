@@ -1,4 +1,4 @@
-"""Rolimons Ad Poster - Android app (Kivy). Also runs on a PC for previewing: python android/main.py"""
+"""LimiTools - Android app (Kivy). Also runs on a PC for previewing: python android/main.py"""
 import copy
 import json
 import logging
@@ -96,6 +96,9 @@ Every post, pause and problem in plain English. Use Problems to see only what we
 This app never asks you to type or paste your Roblox password or .ROBLOSECURITY cookie. Anyone who asks you to paste those is trying to steal your account. Your Roblox sign-in is only read if you turn on "Read my trades directly", and then only to read your trades.
 
 Run posting on one device at a time: two devices posting for the same account hit each other's cooldown.
+
+[b]About[/b]
+LimiTools (formerly Rolimons Ad Poster) is unofficial: it isn't made by, affiliated with or endorsed by Rolimons or Roblox.
 """
 TABS = ("home", "trades", "items", "auto", "ai", "history", "settings")
 LIVE_AUTO_ACCEPT_TEXT = ("The app will accept new received trades on Roblox, by itself, when they pass every rule "
@@ -1221,7 +1224,7 @@ class SwipeManager(ScreenManager):
 
 
 class RoliApp(App):
-    title = "Rolimons Ad Poster"
+    title = "LimiTools"
     running = BooleanProperty(False)
     status_title = StringProperty("Stopped")
     status_detail = StringProperty("")
@@ -1763,7 +1766,7 @@ class RoliApp(App):
         self._update_url = url
 
     def open_update(self):
-        droid.open_url(self._update_url or "https://github.com/rxst0/rolimons-ad-poster/releases/latest")
+        droid.open_url(self._update_url or "https://github.com/rxst0/limitools/releases/latest")
 
 
 if __name__ == "__main__":

@@ -45,9 +45,9 @@ jobs:
         with:
           name: windows
           path: |
-            dist/RolimonsAdPosterSetup.exe
-            dist/RoliAdPoster.exe
-            dist/RoliAdPosterCLI.exe
+            dist/LimiToolsSetup.exe
+            dist/LimiTools.exe
+            dist/LimiToolsCLI.exe
 
   android:
     runs-on: ubuntu-latest
@@ -86,11 +86,11 @@ jobs:
         run: |
           yes | buildozer android release
           mkdir -p ../apk
-          cp bin/*-release.apk ../apk/RolimonsAdPoster.apk
+          cp bin/*-release.apk ../apk/LimiTools.apk
       - uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: apk/RolimonsAdPoster.apk
+          path: apk/LimiTools.apk
 
   android-verify:
     # Installs the exact APK being released on an emulator and checks it starts and stays up.
@@ -132,10 +132,10 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: Rolimons Ad Poster ${{ github.ref_name }}
+          name: LimiTools ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            out/RolimonsAdPosterSetup.exe
-            out/RolimonsAdPoster.apk
-            out/RoliAdPoster.exe
-            out/RoliAdPosterCLI.exe
+            out/LimiToolsSetup.exe
+            out/LimiTools.apk
+            out/LimiTools.exe
+            out/LimiToolsCLI.exe

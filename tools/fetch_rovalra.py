@@ -38,7 +38,7 @@ BRANDING_SVG = ("public/Assets/logo.svg",)
 NEUTRAL_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
                '<rect x="4" y="4" width="56" height="56" rx="14" fill="#3b4250"/></svg>\n')
 
-NOTICE = f"""RoValra {VERSION} - bundled with Rolimons Ad Poster
+NOTICE = f"""RoValra {VERSION} - bundled with LimiTools
 =====================================================
 
 RoValra is a free browser extension by Valra, licensed under the GNU General Public License v3.0
@@ -47,7 +47,7 @@ RoValra is a free browser extension by Valra, licensed under the GNU General Pub
 Corresponding source: {SOURCE_URL}
 Release file: {ZIP_URL}  (SHA-256 {ZIP_SHA256})
 
-Changes made to RoValra for this app (by tools/fetch_rovalra.py in the Rolimons Ad Poster repository):
+Changes made to RoValra for this app (by tools/fetch_rovalra.py in the LimiTools repository):
   1. The branding images excluded from RoValra's license (its logo, icons, contributor and donator art)
      were replaced with plain placeholder images.
   2. tools/view_only_shim.js was added to the top of background.js and content.js. It refuses requests
