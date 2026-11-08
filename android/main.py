@@ -39,7 +39,8 @@ import runner  # noqa: E402
 from roliposter import __version__  # noqa: E402
 from roliposter import events as ev  # noqa: E402
 from roliposter import palette as P  # noqa: E402
-from roliposter.config import (MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, OPTIONAL_TABS, VALID_TAGS, Ad, Config,  # noqa: E402
+from roliposter.config import (CHECK_SPEEDS, MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, OPTIONAL_TABS,  # noqa: E402
+                               VALID_TAGS, Ad, Config,
                                ConfigError, load_config, save_config, validate_config)
 from roliposter.cookie import (COOKIE_ENV_VAR, clean_cookie, cookie_info, get_cookie,  # noqa: E402
                                load_env_file, looks_like_cookie, save_env_value)
@@ -580,6 +581,7 @@ class SettingsScreen(Screen):
         self.set_ai_provider(c.ai.provider, model=c.ai.model)
         for tab in OPTIONAL_TABS:
             ids[f"tab_{tab}"].active = tab not in c.app.hidden_tabs
+        self.set_speed(c.app.check_minutes)
         mk = c.market
         ids.mk_new.active, ids.mk_verified.active, ids.mk_watch.active = mk.new_limited_alerts, mk.verified_only, mk.watch_alerts
         ids.mk_max_price.text, ids.mk_max_copies.text = str(mk.max_price or ""), str(mk.max_copies or "")
@@ -599,6 +601,11 @@ class SettingsScreen(Screen):
         saved = bool(ai_api_key(self._ai_provider))
         self.ai_key_text = (f"A {info['label']} key is saved. Leave the box empty to keep it." if saved else
                             f"Make a key at {info['key_url']} and paste it here.")
+
+    def set_speed(self, minutes: int):
+        self._speed = minutes if minutes in CHECK_SPEEDS else 2
+        for option in CHECK_SPEEDS:
+            self.ids[f"speed_{option}"].selected = option == self._speed
 
     def forget_ai_key(self):
         app = App.get_running_app()
@@ -665,6 +672,7 @@ class SettingsScreen(Screen):
             return app.notice("Notable accounts", 'This needs "Read my trades directly" turned on (friend requests '
                                                   "are only visible to you when signed in).")
         c.app.hidden_tabs = [t for t in OPTIONAL_TABS if not ids[f"tab_{t}"].active]
+        c.app.check_minutes = self._speed
         mk = c.market
         mk.new_limited_alerts, mk.verified_only, mk.watch_alerts = ids.mk_new.active, ids.mk_verified.active, ids.mk_watch.active
         mk.max_price, mk.max_copies = mk_max_price, mk_max_copies

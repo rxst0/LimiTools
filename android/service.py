@@ -17,7 +17,7 @@ PythonService = autoclass("org.kivy.android.PythonService")
 Context = autoclass("android.content.Context")
 PowerManager = autoclass("android.os.PowerManager")
 CHECK_SECONDS = 3
-LIMITEDS_EVERY = 5 * 60
+LIMITEDS_EVERY = 5 * 60     # at least this long between checks (longer with a slower check speed)
 DEALS_EVERY = 10 * 60
 CATALOG_EVERY = 30 * 60
 DEAL_REPEAT = 24 * 3600  # the same deal notifies again after a day
@@ -32,6 +32,11 @@ def load_cfg():
         return load_config(config_path())
     except Exception:
         return None
+
+
+def check_seconds(cfg) -> int:
+    """Settings > Background checks: Fast (2 min), Normal (5) or Battery saver (15)."""
+    return 60 * (cfg.app.check_minutes if cfg else 2)
 
 
 def trades_wanted(cfg) -> bool:
@@ -61,12 +66,15 @@ def main() -> None:
 
     def heartbeat():
         """Tells the app the service is running, and follows the trade-check setting (also mid-posting)."""
-        shown = None
+        shown, interval = None, None
         while not done.is_set():
             runner.mark_service_alive(home)
             now_cfg = load_cfg()
             watching = trades_wanted(now_cfg)
-            droid.start_trade_watcher(watching)
+            if watching and interval not in (None, check_seconds(now_cfg)):
+                droid.start_trade_watcher(False)  # the check speed changed: restart at the new pace
+            interval = check_seconds(now_cfg) if watching else None
+            droid.start_trade_watcher(watching, interval or 0)
             if runner.wants_running(home):
                 text = droid.POSTING_TEXT + (" and checking for new trades" if watching else "")
             elif watching:
@@ -126,7 +134,8 @@ def market_loop(home, done: threading.Event) -> None:
         if cfg and cfg.app.notifications:
             mk = cfg.market
             try:
-                if mk.new_limited_alerts and now - limiteds_at >= LIMITEDS_EVERY:
+                pace = check_seconds(cfg)
+                if mk.new_limited_alerts and now - limiteds_at >= max(LIMITEDS_EVERY, pace):
                     limiteds_at = now
                     first = seen.first_time("limiteds")  # the first check only remembers what's there
                     sent = 0
@@ -138,7 +147,7 @@ def market_loop(home, done: threading.Event) -> None:
                             title, text = market.limited_alert(item)
                             droid.notify_url(title, text, item.url, 6000 + item.id % 100000)
                             sent += 1
-                if mk.watch_alerts and mk.watchlist and now - deals_at >= DEALS_EVERY:
+                if mk.watch_alerts and mk.watchlist and now - deals_at >= max(DEALS_EVERY, 2 * pace):
                     deals_at = now
                     if catalog is None or now - catalog_at >= CATALOG_EVERY:
                         catalog, catalog_at = fetch_catalog(session), now

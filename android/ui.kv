@@ -745,6 +745,30 @@
                         text: 'Watchlist deal alerts (Market tab > item > Watch)'
                 Card:
                     Title:
+                        text: 'Background checks'
+                    Muted:
+                        text: 'How often the app checks for new trades, accepted trades, notable followers, new limiteds and watchlist deals while it runs in the background. Slower uses less battery and data; alerts can then arrive a little later. Posting ads is not affected.'
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(40)
+                        spacing: dp(8)
+                        Chip:
+                            id: speed_2
+                            text: 'Fast (2 min)'
+                            font_size: sp(13)
+                            on_release: root.set_speed(2)
+                        Chip:
+                            id: speed_5
+                            text: 'Normal (5 min)'
+                            font_size: sp(13)
+                            on_release: root.set_speed(5)
+                        Chip:
+                            id: speed_15
+                            text: 'Saver (15 min)'
+                            font_size: sp(13)
+                            on_release: root.set_speed(15)
+                Card:
+                    Title:
                         text: 'Tabs'
                     Muted:
                         text: 'Turn off tabs you don\'t use. Ads and Settings always stay.'

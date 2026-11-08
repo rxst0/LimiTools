@@ -66,3 +66,12 @@ def test_market_settings_and_hidden_tabs_round_trip():
     assert again.market == cfg.market and again.app.hidden_tabs == cfg.app.hidden_tabs
     cfg.market.watchlist[1] = 150
     assert any("Watchlist" in e for e in validate_config(cfg))
+
+
+def test_check_speed_setting():
+    assert config_from_dict({}).app.check_minutes == 2
+    cfg = config_from_dict({"app": {"check_minutes": 15}})
+    assert cfg.app.check_minutes == 15 and config_from_dict(asdict(cfg)).app.check_minutes == 15
+    assert not [e for e in validate_config(cfg) if "check_minutes" in e]
+    cfg.app.check_minutes = 7
+    assert any("check_minutes" in e for e in validate_config(cfg))

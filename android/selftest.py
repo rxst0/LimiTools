@@ -259,6 +259,15 @@ class SelfTest:
         yield 2
         self.dismiss_popups()
         self.record("setting saved", load_config(config_path()).rotation == "random")
+        settings.set_speed(15)
+        settings.save()
+        yield 1
+        self.dismiss_popups()
+        self.record("background check speed saved", load_config(config_path()).app.check_minutes == 15)
+        settings.set_speed(2)
+        settings.save()
+        yield 1
+        self.dismiss_popups()
 
         # History tab; Help (opened from Settings) goes back to Settings; Back from a tab returns to Ads.
         app.switch_tab("history")

@@ -85,6 +85,7 @@ class MarketSettings:
 
 
 OPTIONAL_TABS = ("trades", "items", "market", "auto", "history")  # Ads and Settings always stay
+CHECK_SPEEDS = {2: "Fast", 5: "Normal", 15: "Battery saver"}  # minutes between background checks
 
 
 @dataclass
@@ -99,6 +100,7 @@ class AppSettings:
     check_updates: bool = True
     rovalra: bool = True              # load the bundled RoValra extension in the Received trades tab
     hidden_tabs: list[str] = field(default_factory=list)  # Android: tabs turned off (see OPTIONAL_TABS)
+    check_minutes: int = 2            # Android: minutes between background checks (see CHECK_SPEEDS)
 
 
 @dataclass
@@ -183,6 +185,7 @@ def config_from_dict(data: dict) -> Config:
                 check_updates=bool(app.get("check_updates", True)),
                 rovalra=bool(app.get("rovalra", True)),
                 hidden_tabs=[str(t) for t in app.get("hidden_tabs", []) if str(t) in OPTIONAL_TABS],
+                check_minutes=int(app.get("check_minutes", 2) or 2),
             ),
             auto_accept=AutoAcceptSettings(
                 enabled=bool(aa.get("enabled", False)),
@@ -257,6 +260,8 @@ def validate_config(cfg: Config) -> list[str]:
             errors.append(f"Auto-accept minimum {label} gain must be between -100% and 1000%.")
     if aa.enabled and aa.min_value_gain is None and aa.min_rap_gain is None and aa.min_price_gain is None:
         errors.append("Auto-accept needs at least one minimum gain (value, RAP or price).")
+    if cfg.app.check_minutes not in CHECK_SPEEDS:
+        errors.append(f"app.check_minutes must be one of {sorted(CHECK_SPEEDS)}.")
     mk = cfg.market
     if mk.max_price < 0 or mk.max_copies < 0:
         errors.append("New limited alerts: the maximum price and copies can't be negative.")
