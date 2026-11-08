@@ -73,7 +73,7 @@ jobs:
           path: |
             ~/.buildozer
             android/.buildozer
-          key: buildozer-release-${{ hashFiles('android/buildozer.spec') }}
+          key: buildozer-release-${{ github.repository }}-${{ hashFiles('android/buildozer.spec') }}
       - name: Signing key
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
       - name: Build signed APK

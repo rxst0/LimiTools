@@ -47,6 +47,8 @@ def _jstr(text: str):
 # ---- background service -------------------------------------------------------
 POSTING_TEXT = "Posting your trade ads"
 WATCHING_TEXT = "Checking for new Roblox trades"
+MARKET_TEXT = "Watching for new limiteds and deals"
+CHANNEL_MARKET = "market"
 
 
 class Engine:
@@ -141,6 +143,7 @@ def ensure_channels(manager=None) -> None:
     for channel_id, name, importance in (
             (CHANNEL_POSTING, "Posting paused, resumed or stopped", NotificationManager.IMPORTANCE_HIGH),
             (CHANNEL_TRADES, "New trades", NotificationManager.IMPORTANCE_HIGH),
+            (CHANNEL_MARKET, "New limiteds and watchlist deals", NotificationManager.IMPORTANCE_HIGH),
             (NOTIFY_CHANNEL, "Other alerts", NotificationManager.IMPORTANCE_DEFAULT)):
         manager.createNotificationChannel(NotificationChannel(channel_id, _jstr(name), importance))
 
@@ -558,6 +561,48 @@ def trade_watch_wanted(cfg) -> bool:
     social = cfg.app.notifications and cfg.social_alerts.enabled
     return (IS_ANDROID and cfg.app.direct_trades and (alerts or social or cfg.auto_accept.enabled)
             and RobloxDirect.signed_in())
+
+
+def market_watch_wanted(cfg) -> bool:
+    """New limited alerts or watchlist deals: public data, so no Roblox sign-in needed."""
+    mk = cfg.market
+    return IS_ANDROID and cfg.app.notifications and (mk.new_limited_alerts or (mk.watch_alerts and bool(mk.watchlist)))
+
+
+def service_wanted(cfg) -> bool:
+    """Should the background service run when posting is off?"""
+    return trade_watch_wanted(cfg) or market_watch_wanted(cfg)
+
+
+def notify_url(title: str, text: str, url: str, notification_id: int, channel: str = CHANNEL_MARKET) -> None:
+    """A notification that opens a web page (a Roblox item) when tapped. Safe to call from any thread."""
+    if not IS_ANDROID:
+        log.info("[notification] %s: %s (%s)", title, text, url)
+        return
+    try:
+        from jnius import autoclass, cast  # type: ignore
+        Context = autoclass("android.content.Context")
+        Intent = autoclass("android.content.Intent")
+        Uri = autoclass("android.net.Uri")
+        PendingIntent = autoclass("android.app.PendingIntent")
+        Builder = autoclass("android.app.Notification$Builder")
+        ctx = _app_ctx()
+        manager = cast("android.app.NotificationManager", ctx.getSystemService(Context.NOTIFICATION_SERVICE))
+        ensure_channels(manager)
+        intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        pending = PendingIntent.getActivity(ctx, notification_id, intent,
+                                            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
+        builder = Builder(ctx, channel)
+        builder.setContentTitle(_jstr(title))
+        builder.setContentText(_jstr(text))
+        builder.setStyle(autoclass("android.app.Notification$BigTextStyle")().bigText(_jstr(text)))
+        builder.setSmallIcon(ctx.getApplicationInfo().icon)
+        builder.setContentIntent(pending)
+        builder.setAutoCancel(True)
+        manager.notify(notification_id, builder.build())
+    except Exception as e:
+        log.warning("Couldn't show a notification: %s", e)
 
 
 def push_social_alerts(cfg) -> None:

@@ -53,3 +53,16 @@ def test_social_alerts_defaults_round_trip_and_validation():
     assert any("pick friend requests" in e for e in validate_config(cfg))
     cfg.social_alerts.friend_requests, cfg.social_alerts.min_followers, cfg.social_alerts.verified = True, 0, False
     assert any("minimum follower count" in e for e in validate_config(cfg))
+
+
+def test_market_settings_and_hidden_tabs_round_trip():
+    import json
+    cfg = config_from_dict({})
+    assert cfg.market.watchlist == {} and cfg.app.hidden_tabs == [] and not cfg.market.new_limited_alerts
+    cfg = config_from_dict({"market": {"new_limited_alerts": True, "max_price": 500, "watchlist": {"1365767": 15}},
+                            "app": {"hidden_tabs": ["auto", "nonsense", "history"]}})
+    assert cfg.market.watchlist == {1365767: 15.0} and cfg.app.hidden_tabs == ["auto", "history"]
+    again = config_from_dict(json.loads(json.dumps(asdict(cfg))))  # how save_config writes it
+    assert again.market == cfg.market and again.app.hidden_tabs == cfg.app.hidden_tabs
+    cfg.market.watchlist[1] = 150
+    assert any("Watchlist" in e for e in validate_config(cfg))

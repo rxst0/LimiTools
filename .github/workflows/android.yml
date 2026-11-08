@@ -32,7 +32,7 @@ jobs:
           path: |
             ~/.buildozer
             android/.buildozer
-          key: buildozer-debug-x86_64-${{ hashFiles('android/buildozer.spec') }}
+          key: buildozer-debug-x86_64-${{ github.repository }}-${{ hashFiles('android/buildozer.spec') }}
       - name: Build debug APK (x86_64, for the emulator)
         working-directory: android
         env:

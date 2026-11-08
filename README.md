@@ -28,7 +28,7 @@ Fully open source, with no servers involved: everything runs on your own device.
 
 ## Download (Windows)
 
-1. Go to [**Releases**](https://github.com/rxst0/limitools/releases/latest) and download **`LimiToolsSetup.exe`**.
+1. Go to [**Releases**](https://github.com/rxst0/LimiTools/releases/latest) and download **`LimiToolsSetup.exe`**.
 2. Run it and click **Install**. No admin rights are needed.
 3. Open **LimiTools** from the Start Menu, Windows Search, or the desktop shortcut.
 
@@ -42,7 +42,7 @@ Click **More info → Run anyway**. You can always read the source code here and
 
 ## Download (Android)
 
-1. On your phone, open [**Releases**](https://github.com/rxst0/limitools/releases/latest) and download **`LimiTools.apk`**.
+1. On your phone, open [**Releases**](https://github.com/rxst0/LimiTools/releases/latest) and download **`LimiTools.apk`**.
 2. Open the file. If Android asks, allow your browser to **install unknown apps**, then tap **Install**.
    Play Protect may warn because the app isn't from the Play Store; tap **More details → Install anyway**.
 3. Open **LimiTools**, tap **Sign in to Rolimons**, and log in and verify like on the website.
@@ -143,13 +143,25 @@ How it works, and what changes:
 - Anyone with your unlocked, rooted phone could in principle get the cookie, just like from any browser
   on that phone. If you'd rather not take that risk, leave the option off.
 
+## Market: item browser, player lookup, new limiteds and deals (Android)
+
+The **Market** tab has two parts:
+- **Items:** search any Rolimons-tracked limited and open it to see its value, RAP, demand, trend, current price and projected/hyped/rare flags. Tap **Watch** and pick a discount (say 15%): you get an alert when someone lists it at least that much under its value. Listings far above value are ignored.
+- **Players:** look up any Roblox username to see their value, RAP, item count, value chart and most valuable items, with links to their Roblox and Rolimons pages.
+
+**New limited alerts** (Settings → New limiteds and watchlist) notify you about new limiteds in the Roblox catalog, with the price, number of copies, creator and description; tap to open the item on Roblox. New UGC limiteds come out many times a day, so you can limit alerts to verified creators, a maximum price and a maximum number of copies. New limited alerts and watchlist deals use public data: they don't need **Read my trades directly** or a Roblox sign-in, and they work with the app closed.
+
+## Tabs (Android)
+
+**Settings → Tabs** turns off the tabs you don't use (Trades, Items, Market, Auto, History). Ads and Settings always stay. AI recommendations open from **Settings → AI trade recommendations**.
+
 ## Notable followers and friend requests (Android)
 
 Off by default, and it needs **Read my trades directly** (Roblox only shows your friend requests when you're signed in). In **Settings → Notable followers and friend requests**, set a minimum follower count and whether verified accounts always count. About every 3 minutes the background checker looks at your newest friend requests and followers, and notifies you when one is notable: *"Verified user X sent you a friend request"* or *"X (12.4K followers) followed you"*. Tap it to open their Roblox profile. The first check only remembers who's already there, so you're not flooded with old ones.
 
 ## AI recommendations (Android)
 
-Off by default. In **Settings → AI trade recommendations**, pick **Claude** (Anthropic) or **ChatGPT** (OpenAI) and paste your own API key from that company (console.anthropic.com or platform.openai.com). Then on the **AI** tab, tap **Get recommendations**.
+Off by default. In **Settings → AI trade recommendations**, pick **Claude** (Anthropic) or **ChatGPT** (OpenAI) and paste your own API key from that company (console.anthropic.com or platform.openai.com). Then tap **Open AI recommendations** (in the same card) and **Get recommendations**.
 
 - The AI gets your limiteds and the Rolimons market around their values: value, RAP, demand, trend, projected/hyped/rare flags, current best price, and your inventory's value change over 1, 6 and 12 months. It suggests **upgrades**, **downgrades** and items to **hold**, with a reason and a confidence.
 - Suggestions are checked before you see them: you must own what it says to give, everything it says to get must be a real item, and it can't suggest receiving a projected item.

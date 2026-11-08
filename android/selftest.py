@@ -279,11 +279,57 @@ class SelfTest:
         app.switch_tab("auto")
         yield 1
         self.record("auto-accept tab opens", app.sm.current == "auto" and app.active_tab == "auto")
-        app.switch_tab("ai")
+        # AI recommendations open from Settings (off until turned on there).
+        app.switch_tab("settings")
+        yield 1
+        app.show("ai")
         yield 1
         ai = app.sm.get_screen("ai")
-        self.record("AI tab opens and says it's off", app.sm.current == "ai" and "off" in ai.status_text,
-                    ai.status_text)
+        self.record("AI recommendations open from Settings and say they're off",
+                    app.sm.current == "ai" and "off" in ai.status_text, ai.status_text)
+        app.go_back()
+        yield 1
+        # Market tab: item browser, an item's page and watching it, player lookup.
+        app.switch_tab("market")
+        yield 1
+        market = app.sm.get_screen("market")
+        market.ids.search.text = "dominus"
+        ok = yield from self.wait_until(lambda: any(hasattr(w, "add_action") for w in market.ids.results.children), 15)
+        self.record("market item search shows results", ok, f"{len(market.ids.results.children)} rows")
+        item_id = max((i for i in app.catalog.items.values() if "dominus" in i.name.lower()),
+                      key=lambda i: i.default_value).id
+        market.open_item(item_id)
+        yield 2
+        item = app.sm.get_screen("item")
+        self.record("item page opens with its data", app.sm.current == "item" and "Value" in item.info_text,
+                    item.info_text[:120])
+        item.ids.discount.text = "15"
+        item.toggle_watch()
+        yield 1
+        self.dismiss_popups()
+        self.record("watching an item saves it", load_config(config_path()).market.watchlist.get(item_id) == 15.0)
+        item.toggle_watch()
+        yield 1
+        self.dismiss_popups()
+        self.record("unwatching removes it", item_id not in load_config(config_path()).market.watchlist)
+        app.go_back()
+        yield 1
+        market.set_mode("players")
+        market.ids.search.text = "builderman"
+        market.lookup()
+        ok = yield from self.wait_until(lambda: not market.busy, 60)
+        self.record("player lookup shows a player", ok and len(market.ids.results.children) > 0,
+                    market.status_text or f"{len(market.ids.results.children)} widgets")
+        yield 2
+        self.shot("11-player-lookup")
+        market.set_mode("items")
+        # Hiding a tab removes it from the tab bar; showing it brings it back.
+        app.cfg.app.hidden_tabs = ["auto"]
+        app.rebuild_nav()
+        hidden_ok = [b.tab for b in app.nav.children][::-1] == [t for t in app.visible_tabs()] and "auto" not in app.visible_tabs()
+        app.cfg.app.hidden_tabs = []
+        app.rebuild_nav()
+        self.record("tabs can be hidden and shown", hidden_ok and len(app.nav.children) == 7)
         app.switch_tab("home")
         yield 1
 

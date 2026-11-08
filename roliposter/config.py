@@ -74,6 +74,20 @@ class SocialAlertSettings:
 
 
 @dataclass
+class MarketSettings:
+    """New limited alerts and the watchlist (alerts when a watched item is listed under value)."""
+    new_limited_alerts: bool = False
+    verified_only: bool = False      # only limiteds from verified creators
+    max_price: int = 0               # 0 = any price
+    max_copies: int = 0              # 0 = any stock
+    watch_alerts: bool = True        # alerts for watched items (only when the watchlist has items)
+    watchlist: dict[int, float] = field(default_factory=dict)  # item ID -> minimum % under value
+
+
+OPTIONAL_TABS = ("trades", "items", "market", "auto", "history")  # Ads and Settings always stay
+
+
+@dataclass
 class AppSettings:
     close_to_tray: bool = True        # keep posting in the tray when the window is closed
     auto_start_posting: bool = False  # start posting as soon as the app opens
@@ -84,6 +98,7 @@ class AppSettings:
     direct_trades: bool = False
     check_updates: bool = True
     rovalra: bool = True              # load the bundled RoValra extension in the Received trades tab
+    hidden_tabs: list[str] = field(default_factory=list)  # Android: tabs turned off (see OPTIONAL_TABS)
 
 
 @dataclass
@@ -100,6 +115,7 @@ class Config:
     auto_accept: AutoAcceptSettings = field(default_factory=AutoAcceptSettings)
     ai: AiSettings = field(default_factory=AiSettings)
     social_alerts: SocialAlertSettings = field(default_factory=SocialAlertSettings)
+    market: MarketSettings = field(default_factory=MarketSettings)
     ads: list[Ad] = field(default_factory=list)
 
     def enabled_ads(self) -> list[Ad]:
@@ -139,6 +155,7 @@ def config_from_dict(data: dict) -> Config:
         aa = data.get("auto_accept", {}) or {}
         ai = data.get("ai", {}) or {}
         sa = data.get("social_alerts", {}) or {}
+        mk = data.get("market", {}) or {}
         return Config(
             roblox_user_id=int(data.get("roblox_user_id", 0) or 0),
             rotation=str(data.get("rotation", "sequential")).lower(),
@@ -165,6 +182,7 @@ def config_from_dict(data: dict) -> Config:
                 direct_trades=bool(app.get("direct_trades", False)),
                 check_updates=bool(app.get("check_updates", True)),
                 rovalra=bool(app.get("rovalra", True)),
+                hidden_tabs=[str(t) for t in app.get("hidden_tabs", []) if str(t) in OPTIONAL_TABS],
             ),
             auto_accept=AutoAcceptSettings(
                 enabled=bool(aa.get("enabled", False)),
@@ -181,6 +199,11 @@ def config_from_dict(data: dict) -> Config:
                 enabled=bool(sa.get("enabled", False)), min_followers=int(sa.get("min_followers", 1000)),
                 verified=bool(sa.get("verified", True)), friend_requests=bool(sa.get("friend_requests", True)),
                 follows=bool(sa.get("follows", True))),
+            market=MarketSettings(
+                new_limited_alerts=bool(mk.get("new_limited_alerts", False)),
+                verified_only=bool(mk.get("verified_only", False)), max_price=int(mk.get("max_price", 0) or 0),
+                max_copies=int(mk.get("max_copies", 0) or 0), watch_alerts=bool(mk.get("watch_alerts", True)),
+                watchlist={int(k): float(v) for k, v in (mk.get("watchlist") or {}).items()}),
             ads=ads,
         )
     except (TypeError, ValueError, AttributeError) as e:
@@ -234,6 +257,11 @@ def validate_config(cfg: Config) -> list[str]:
             errors.append(f"Auto-accept minimum {label} gain must be between -100% and 1000%.")
     if aa.enabled and aa.min_value_gain is None and aa.min_rap_gain is None and aa.min_price_gain is None:
         errors.append("Auto-accept needs at least one minimum gain (value, RAP or price).")
+    mk = cfg.market
+    if mk.max_price < 0 or mk.max_copies < 0:
+        errors.append("New limited alerts: the maximum price and copies can't be negative.")
+    if any(not 0 < d < 100 for d in mk.watchlist.values()):
+        errors.append("Watchlist: the discount must be between 1% and 99%.")
     sa = cfg.social_alerts
     if sa.min_followers < 0:
         errors.append("Notable accounts: the minimum follower count can't be negative.")

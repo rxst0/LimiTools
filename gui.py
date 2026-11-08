@@ -33,7 +33,7 @@ from roliposter.values import evaluate_ad
 log = logging.getLogger("roliposter.gui")
 
 APP_NAME = "LimiTools"
-REPO_URL = "https://github.com/rxst0/limitools"
+REPO_URL = "https://github.com/rxst0/LimiTools"
 C = theme.COLORS
 THUMB_PX = 24
 INVENTORY_REFRESH_MS = 10 * 60 * 1000

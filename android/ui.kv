@@ -215,6 +215,10 @@
             text_size: self.size
             halign: 'left'
             valign: 'middle'
+            # One line, cut at the end: a long line used to wrap and show only its last words.
+            shorten: True
+            shorten_from: 'right'
+            max_lines: 1
     BoxLayout:
         id: actions
         size_hint_x: None
@@ -712,6 +716,53 @@
                     FlatButton:
                         text: 'Remove saved API key'
                         on_release: root.forget_ai_key()
+                    AccentButton:
+                        text: 'Open AI recommendations'
+                        on_release: app.show('ai')
+                Card:
+                    Title:
+                        text: 'New limiteds and watchlist'
+                    Muted:
+                        text: 'Works without signing in to Roblox. New limited alerts include the price, copies and description; tap one to open it on Roblox. New UGC limiteds come out many times a day, so use the filters.'
+                    SettingRow:
+                        id: mk_new
+                        text: 'Notify me about new limiteds'
+                    SettingRow:
+                        id: mk_verified
+                        text: 'Only from verified creators'
+                    FieldLabel:
+                        text: 'MAX PRICE (R$, EMPTY = ANY)'
+                    Field:
+                        id: mk_max_price
+                        input_filter: 'int'
+                    FieldLabel:
+                        text: 'MAX COPIES (EMPTY = ANY)'
+                    Field:
+                        id: mk_max_copies
+                        input_filter: 'int'
+                    SettingRow:
+                        id: mk_watch
+                        text: 'Watchlist deal alerts (Market tab > item > Watch)'
+                Card:
+                    Title:
+                        text: 'Tabs'
+                    Muted:
+                        text: 'Turn off tabs you don\'t use. Ads and Settings always stay.'
+                    SettingRow:
+                        id: tab_trades
+                        text: 'Trades'
+                    SettingRow:
+                        id: tab_items
+                        text: 'Items'
+                    SettingRow:
+                        id: tab_market
+                        text: 'Market (item browser and player lookup)'
+                    SettingRow:
+                        id: tab_auto
+                        text: 'Auto (auto-accept)'
+                    SettingRow:
+                        id: tab_history
+                        text: 'History'
                 FlatButton:
                     text: 'Help'
                     on_release: app.show('help')
@@ -897,27 +948,6 @@
         Rectangle:
             pos: self.x, self.top - dp(1)
             size: self.width, dp(1)
-    NavButton:
-        text: 'Ads'
-        tab: 'home'
-    NavButton:
-        text: 'Trades'
-        tab: 'trades'
-    NavButton:
-        text: 'Items'
-        tab: 'items'
-    NavButton:
-        text: 'Auto'
-        tab: 'auto'
-    NavButton:
-        text: 'AI'
-        tab: 'ai'
-    NavButton:
-        text: 'History'
-        tab: 'history'
-    NavButton:
-        text: 'Settings'
-        tab: 'settings'
 
 <TradeThumb@Image>:
     size_hint: None, None
@@ -1401,7 +1431,7 @@
                 size: self.size
         TopBar:
             title: 'AI recommendations'
-            show_back: False
+            show_back: True
         ScrollView:
             do_scroll_x: False
             BoxLayout:
@@ -1429,6 +1459,120 @@
                     spacing: dp(12)
                     size_hint_y: None
                     height: self.minimum_height
+
+<MarketScreen>:
+    name: 'market'
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: BG
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        TopBar:
+            title: 'Market'
+            show_back: False
+        BoxLayout:
+            size_hint_y: None
+            height: dp(54)
+            padding: dp(14), dp(8)
+            spacing: dp(8)
+            Chip:
+                text: 'Items'
+                selected: root.mode == 'items'
+                on_release: root.set_mode('items')
+            Chip:
+                text: 'Players'
+                selected: root.mode == 'players'
+                on_release: root.set_mode('players')
+        BoxLayout:
+            size_hint_y: None
+            height: dp(64)
+            padding: dp(14), dp(4), dp(14), dp(12)
+            spacing: dp(8)
+            Field:
+                id: search
+                hint_text: 'Search items by name, acronym or ID' if root.mode == 'items' else 'Roblox username'
+                on_text: root.schedule_search()
+                on_text_validate: root.submit()
+            AccentButton:
+                text: 'Look up'
+                size_hint_x: None
+                width: dp(96) if root.mode == 'players' else 0
+                opacity: 1 if root.mode == 'players' else 0
+                disabled: root.mode != 'players' or root.busy
+                on_release: root.lookup()
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: 'vertical'
+                padding: dp(14), dp(0), dp(14), dp(24)
+                spacing: dp(8)
+                size_hint_y: None
+                height: self.minimum_height
+                Muted:
+                    text: root.status_text
+                    halign: 'center'
+                    height: self.texture_size[1] + dp(12) if root.status_text else 0
+                BoxLayout:
+                    id: results
+                    orientation: 'vertical'
+                    spacing: dp(8)
+                    size_hint_y: None
+                    height: self.minimum_height
+
+<ItemScreen>:
+    name: 'item'
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: BG
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        TopBar:
+            title: root.title
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: 'vertical'
+                padding: dp(14), dp(12), dp(14), dp(30)
+                spacing: dp(12)
+                size_hint_y: None
+                height: self.minimum_height
+                Image:
+                    source: root.thumb
+                    size_hint_y: None
+                    height: dp(110) if root.thumb else 0
+                    opacity: 1 if root.thumb else 0
+                Txt:
+                    text: root.info_text
+                Card:
+                    Title:
+                        text: 'Watch for deals'
+                    Muted:
+                        text: 'Get an alert when someone lists this item at least this much under its value. Listings far above value are ignored.'
+                    FieldLabel:
+                        text: 'MINIMUM DISCOUNT (%)'
+                    Field:
+                        id: discount
+                        input_filter: 'float'
+                        disabled: root.watching
+                    AccentButton:
+                        text: 'Stop watching' if root.watching else 'Watch'
+                        on_release: root.toggle_watch()
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(46)
+                    spacing: dp(8)
+                    FlatButton:
+                        text: 'Open on Roblox'
+                        on_release: root.open_roblox()
+                    FlatButton:
+                        text: 'Open on Rolimons'
+                        on_release: root.open_rolimons()
 
 <HelpScreen>:
     name: 'help'

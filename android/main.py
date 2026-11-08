@@ -39,7 +39,7 @@ import runner  # noqa: E402
 from roliposter import __version__  # noqa: E402
 from roliposter import events as ev  # noqa: E402
 from roliposter import palette as P  # noqa: E402
-from roliposter.config import (MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, VALID_TAGS, Ad, Config,  # noqa: E402
+from roliposter.config import (MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, OPTIONAL_TABS, VALID_TAGS, Ad, Config,  # noqa: E402
                                ConfigError, load_config, save_config, validate_config)
 from roliposter.cookie import (COOKIE_ENV_VAR, clean_cookie, cookie_info, get_cookie,  # noqa: E402
                                load_env_file, looks_like_cookie, save_env_value)
@@ -50,8 +50,10 @@ from roliposter.paths import cache_dir, config_path, env_path, log_dir, state_pa
 from roliposter.poster import fmt_duration  # noqa: E402
 from roliposter.roblox_trades import (KINDS, KIND_LABELS, ago, parse_details, parse_list, sort_trades,  # noqa: E402
                                       verdict)
-from roliposter.portfolio import RANGES, PriceLog, fetch_best_prices, fetch_history, totals  # noqa: E402
+from roliposter.portfolio import (RANGES, PriceLog, fetch_best_prices, fetch_history,  # noqa: E402
+                                  realistic_price, totals)
 from roliposter.ai_advisor import PROVIDERS, Advice, AdvisorError, ask, build_context, check  # noqa: E402
+from roliposter.market import lookup_username  # noqa: E402
 from roliposter.state import PostHistory  # noqa: E402
 from roliposter.thumbs import ThumbnailCache  # noqa: E402
 from roliposter.updates import check_for_update  # noqa: E402
@@ -80,11 +82,20 @@ The Items tab shows the limiteds in your Rolimons inventory, their total value a
 [b]Read my trades directly (optional)[/b]
 Turn this on in Settings to see your trades as a list in the app (received, sent, completed, inactive) with item pictures and Rolimons values, sorted newest first or by best or worst deal, and to get alerts for new and accepted trades even when the app is closed. To do this, the app keeps an encrypted copy of your Roblox sign-in (.ROBLOSECURITY) on this phone and uses it only to read your trades. It's never sent anywhere except Roblox. It can't be used to decline or send trades, and it only accepts trades if you turn on live auto-accept. Turning the option off deletes the copy.
 
+[b]Market[/b]
+Items: search any limited, open it for its value, RAP, demand, trend and current price, and tap Watch to get an alert when someone lists it under value. Players: look up any username to see their value, chart and items.
+
+[b]New limited alerts (optional)[/b]
+Settings > New limiteds and watchlist notifies you about new limiteds in the Roblox catalog, with the price, copies and description. Use the filters (verified creators, max price, max copies): new UGC limiteds come out many times a day. No Roblox sign-in needed.
+
+[b]Tabs[/b]
+Settings > Tabs turns off tabs you don't use. Ads and Settings always stay.
+
 [b]Notable followers and friend requests (optional)[/b]
 Settings > Notable followers and friend requests notifies you when a verified account, or one with at least your minimum number of followers, sends you a friend request or follows you. It needs "Read my trades directly". Tap the alert to open their Roblox profile.
 
 [b]AI recommendations (optional)[/b]
-Turn on Settings > AI trade recommendations, pick Claude or ChatGPT and paste your own API key from that company. On the AI tab, tap Get recommendations: the AI looks at your items and the Rolimons market (value, RAP, demand, trend, projected/hyped/rare, current prices, your value history) and suggests upgrades, downgrades and items to hold. It only runs when you tap the button, and each run costs a few cents on your API account. Your items and market data go to the AI company; your Roblox and Rolimons sign-ins never do. Suggestions can be wrong: check every trade yourself.
+Turn on Settings > AI trade recommendations, pick Claude or ChatGPT and paste your own API key from that company. Tap Open AI recommendations, then Get recommendations: the AI looks at your items and the Rolimons market (value, RAP, demand, trend, projected/hyped/rare, current prices, your value history) and suggests upgrades, downgrades and items to hold. It only runs when you tap the button, and each run costs a few cents on your API account. Your items and market data go to the AI company; your Roblox and Rolimons sign-ins never do. Suggestions can be wrong: check every trade yourself.
 
 [b]Auto-accept (optional)[/b]
 The Auto tab checks each new received trade against your rules: minimum value, RAP and price gain, and no projected items. Test mode (the default) only tells you what it would accept. Live accepts on Roblox, up to your daily limit. Accepted trades can't be undone, and Roblox's rules don't allow automating your account, so watch test mode first.
@@ -103,7 +114,9 @@ Run posting on one device at a time: two devices posting for the same account hi
 [b]About[/b]
 LimiTools (formerly Rolimons Ad Poster) is unofficial: it isn't made by, affiliated with or endorsed by Rolimons or Roblox.
 """
-TABS = ("home", "trades", "items", "auto", "ai", "history", "settings")
+ALL_TABS = ("home", "trades", "items", "market", "auto", "history", "settings")
+TAB_LABELS = {"home": "Ads", "trades": "Trades", "items": "Items", "market": "Market", "auto": "Auto",
+              "history": "History", "settings": "Settings"}
 LIVE_AUTO_ACCEPT_TEXT = ("The app will accept new received trades on Roblox, by itself, when they pass every rule "
                          "you set. Accepted trades can't be undone.\n\n"
                          "- Scammers inflate RAP and prices; the value rule and blocking projected items protect "
@@ -565,6 +578,11 @@ class SettingsScreen(Screen):
         ids.sa_verified.active, ids.sa_requests.active, ids.sa_follows.active = sa.verified, sa.friend_requests, sa.follows
         ids.ai_on.active = c.ai.enabled
         self.set_ai_provider(c.ai.provider, model=c.ai.model)
+        for tab in OPTIONAL_TABS:
+            ids[f"tab_{tab}"].active = tab not in c.app.hidden_tabs
+        mk = c.market
+        ids.mk_new.active, ids.mk_verified.active, ids.mk_watch.active = mk.new_limited_alerts, mk.verified_only, mk.watch_alerts
+        ids.mk_max_price.text, ids.mk_max_copies.text = str(mk.max_price or ""), str(mk.max_copies or "")
         self.refresh_battery()
 
     # ---- AI recommendations ----------------------------------------------------------------
@@ -622,6 +640,7 @@ class SettingsScreen(Screen):
             max_ads = int(ids.max_ads.text or 0)
             overpay = float(ids.overpay.text or 0)
             sa_min = int(ids.sa_min.text or 0)
+            mk_max_price, mk_max_copies = int(ids.mk_max_price.text or 0), int(ids.mk_max_copies.text or 0)
         except ValueError:
             return app.notice("Settings", "Please enter numbers only.")
         c = copy.deepcopy(app.cfg)
@@ -645,6 +664,10 @@ class SettingsScreen(Screen):
         if sa.enabled and not c.app.direct_trades:
             return app.notice("Notable accounts", 'This needs "Read my trades directly" turned on (friend requests '
                                                   "are only visible to you when signed in).")
+        c.app.hidden_tabs = [t for t in OPTIONAL_TABS if not ids[f"tab_{t}"].active]
+        mk = c.market
+        mk.new_limited_alerts, mk.verified_only, mk.watch_alerts = ids.mk_new.active, ids.mk_verified.active, ids.mk_watch.active
+        mk.max_price, mk.max_copies = mk_max_price, mk_max_copies
         c.ai.enabled = ids.ai_on.active
         c.ai.provider = self._ai_provider
         c.ai.model = ids.ai_model.text.strip()
@@ -660,7 +683,10 @@ class SettingsScreen(Screen):
         app.cfg = c
         app.persist()
         app.apply_trade_notifications()
+        app.rebuild_nav()
         self.set_ai_provider(c.ai.provider)
+        if c.market.new_limited_alerts:
+            droid.request_notification_permission()
         if turned_on and droid.RobloxDirect.available:
             droid.request_notification_permission()
             app.notice("Read my trades directly", DIRECT_TRADES_TEXT)
@@ -1008,6 +1034,221 @@ class ItemsScreen(Screen):
         self.chart_note = "\n".join(notes)
 
 
+class MarketScreen(Screen):
+    """Market tab: the item browser (search any limited, watch it for deals) and player lookup."""
+    mode = StringProperty("items")
+    status_text = StringProperty("")
+    busy = BooleanProperty(False)
+
+    def on_pre_enter(self):
+        App.get_running_app().ensure_prices()
+        if self.mode == "items":
+            self.show_items()
+
+    def set_mode(self, mode: str):
+        self.mode = mode
+        self.ids.search.text = ""
+        self.status_text = ""
+        self.ids.results.clear_widgets()
+        if mode == "items":
+            self.show_items()
+
+    def schedule_search(self):
+        if self.mode == "items":
+            Clock.unschedule(self.show_items)
+            Clock.schedule_once(self.show_items, 0.3)
+
+    def submit(self):
+        if self.mode == "players":
+            self.lookup()
+        else:
+            self.show_items()
+
+    # ---- items ---------------------------------------------------------------------------------
+    def show_items(self, *_):
+        app = App.get_running_app()
+        box = self.ids.results
+        box.clear_widgets()
+        if not app.catalog:
+            self.status_text = "Item list still loading..."
+            return
+        self.status_text = ""
+        q = self.ids.search.text.strip().lower()
+        if q:
+            matches = []
+            for item in app.catalog.items.values():
+                if q == str(item.id) or q in item.name.lower() or q == item.acronym.lower():
+                    rank = (0 if q in (item.acronym.lower(), str(item.id)) else
+                            1 if item.name.lower().startswith(q) else 2)
+                    matches.append((rank, -item.default_value, item.id))
+            ids = [m[2] for m in sorted(matches)[:40]]
+            heading = f"{len(ids)} item{'s' if len(ids) != 1 else ''}" if ids else "No matching items."
+        else:
+            ids = sorted(app.cfg.market.watchlist, key=lambda i: -(app.catalog.get(i).default_value
+                                                                  if app.catalog.get(i) else 0))
+            heading = ("Your watchlist" if ids else
+                       "Search any limited by name, acronym or ID. Open one and tap Watch to get an alert when "
+                       "someone lists it under value.")
+        box.add_widget(Factory.FieldLabel(text=heading.upper() if ids and not q else heading))
+        for item_id in ids:
+            row = app.market_row(item_id)
+            row.add_action("Open", lambda i=item_id: self.open_item(i), accent=True)
+            box.add_widget(row)
+        app.request_thumbs(ids)
+
+    def open_item(self, item_id: int):
+        app = App.get_running_app()
+        app.sm.get_screen("item").load(item_id)
+        app.show("item")
+
+    # ---- players -------------------------------------------------------------------------------
+    def lookup(self):
+        app = App.get_running_app()
+        name = self.ids.search.text.strip()
+        if not name or self.busy:
+            return
+        self.busy = True
+        self.status_text = f"Looking up {name}..."
+        self.ids.results.clear_widgets()
+
+        def work():
+            session = requests.Session()
+            try:
+                player = lookup_username(session, name)
+                if player is None:
+                    return self._player_ready(None, None, None, f"No Roblox user called {name}.")
+                inventory = fetch_inventory(session, player.id)
+                try:
+                    history = fetch_history(session, player.id)
+                except Exception:
+                    history = None  # players Rolimons hasn't scanned have no chart
+                self._player_ready(player, inventory, history, "")
+            except Exception as e:
+                log.warning("Player lookup failed: %s", e)
+                self._player_ready(None, None, None, "Couldn't look that player up. Check your internet and try again.")
+        threading.Thread(target=work, daemon=True).start()
+
+    @mainthread
+    def _player_ready(self, player, inventory, history, error: str):
+        self.busy = False
+        self.status_text = error
+        if player is None:
+            return
+        app = App.get_running_app()
+        box = self.ids.results
+        box.clear_widgets()
+        card = Factory.Card()
+        badge = "  [color=" + P.ACCENT + "](verified)[/color]" if player.verified else ""
+        card.add_widget(Factory.Title(text=f"{player.name}{badge}"))
+        if player.display_name and player.display_name != player.name:
+            card.add_widget(Factory.Muted(text=player.display_name))
+        t = totals(inventory, app.catalog) if inventory and not inventory.private and app.catalog else None
+        if inventory is not None and inventory.private:
+            card.add_widget(Factory.Txt(text="Their inventory is private."))
+        elif t:
+            card.add_widget(Factory.Txt(text=f"[b]Value {t.value:,}[/b]   ·   RAP {t.rap:,}   ·   {t.items} items"))
+        if history and history.value.values and t:
+            year = history.value.with_point(t.value).since(365 * 86400)
+            chart = ValueChart(size_hint_y=None, height=dp(150))
+            chart.series = [(P.ACCENT, list(zip(year.times, year.values)))]
+            card.add_widget(chart)
+            diff, pct = year.change()
+            if pct is not None:
+                card.add_widget(Factory.Muted(text=f"Value {'+' if diff >= 0 else '-'}{short_number(abs(diff))} "
+                                                   f"({pct:+.1f}%) in the last year"))
+        buttons = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
+        for text, url in (("Roblox profile", f"https://www.roblox.com/users/{player.id}/profile"),
+                          ("Rolimons", f"https://www.rolimons.com/player/{player.id}")):
+            btn = FlatButton(text=text)
+            btn.bind(on_release=lambda *_a, u=url: droid.open_url(u))
+            buttons.add_widget(btn)
+        card.add_widget(buttons)
+        box.add_widget(card)
+        if t:
+            box.add_widget(Factory.FieldLabel(text="MOST VALUABLE ITEMS"))
+            ids = [h.item_id for h in t.holdings[:40]]
+            for h in t.holdings[:40]:
+                row = app.market_row(h.item_id)
+                if h.count > 1:
+                    row.name += f"  ×{h.count}"
+                row.add_action("Open", lambda i=h.item_id: self.open_item(i))
+                box.add_widget(row)
+            app.request_thumbs(ids)
+
+
+class ItemScreen(Screen):
+    """One item from the Market tab: Rolimons data, current price, and watching it for deals."""
+    title = StringProperty("Item")
+    thumb = StringProperty("")
+    info_text = StringProperty("")
+    watching = BooleanProperty(False)
+
+    def load(self, item_id: int):
+        self.item_id = item_id
+        self.refresh()
+
+    def refresh(self):
+        app = App.get_running_app()
+        info = app.catalog.get(self.item_id) if app.catalog else None
+        self.title = info.label if info else f"Item {self.item_id}"
+        self.thumb = app.thumb_source(self.item_id)
+        app.request_thumbs([self.item_id])
+        lines = []
+        if info:
+            lines.append(f"[b]Value {info.default_value:,}[/b]" + ("" if info.value > 0 else "  (no Rolimons value: RAP)"))
+            lines.append(f"RAP {info.rap:,}")
+            lines.append(f"Demand: {info.demand_label}   ·   Trend: {info.trend_label}")
+            listed = app.best_prices.get(self.item_id) if app.best_prices is not None else None
+            price = realistic_price(listed, info.default_value, info.rap)
+            if app.best_prices is None:
+                lines.append("Current price: loading...")
+            elif price:
+                pct = (price - info.default_value) / info.default_value * 100 if info.default_value else 0
+                lines.append(f"Current price {price:,} R$ ({pct:+.0f}% vs value)")
+            else:
+                lines.append("Current price: nobody is selling at a realistic price")
+            flags = [f for f, on in (("Projected", info.projected), ("Hyped", info.hyped), ("Rare", info.rare)) if on]
+            if flags:
+                lines.append(f"[color={P.WARN}]{'  ·  '.join(flags)}[/color]")
+            owned = app.owned_counts() or {}
+            if owned.get(self.item_id):
+                lines.append(f"You own {owned[self.item_id]}")
+        self.info_text = "\n".join(lines)
+        watchlist = app.cfg.market.watchlist
+        self.watching = self.item_id in watchlist
+        self.ids.discount.text = f"{watchlist.get(self.item_id, 10):g}"
+
+    def toggle_watch(self):
+        app = App.get_running_app()
+        watchlist = app.cfg.market.watchlist
+        if self.watching:
+            watchlist.pop(self.item_id, None)
+            app.persist()
+            app.apply_trade_notifications()
+            self.watching = False
+            return app.toast("Removed from your watchlist")
+        try:
+            discount = float(self.ids.discount.text or 0)
+        except ValueError:
+            discount = 0
+        if not 0 < discount < 100:
+            return app.notice("Watchlist", "Enter a discount between 1 and 99 (%).")
+        watchlist[self.item_id] = discount
+        app.persist()
+        app.apply_trade_notifications()  # starts the background checks if needed
+        self.watching = True
+        note = "" if app.cfg.app.notifications and app.cfg.market.watch_alerts else \
+            " Alerts are off: turn on notifications and watchlist alerts in Settings."
+        droid.request_notification_permission()
+        app.notice("Watching", f"You'll get an alert when it's listed at least {discount:g}% under value.{note}")
+
+    def open_roblox(self):
+        droid.open_url(f"https://www.roblox.com/catalog/{self.item_id}")
+
+    def open_rolimons(self):
+        droid.open_url(f"https://www.rolimons.com/item/{self.item_id}")
+
+
 class PickerScreen(Screen):
     """Full-screen item search: tap an item to add it to the ad being edited."""
     title = StringProperty("Add item")
@@ -1212,7 +1453,7 @@ class SwipeManager(ScreenManager):
     def on_touch_move(self, touch):
         from kivy.metrics import dp
         start = touch.ud.get("swipe_start")
-        if start and not touch.ud.get("swiping") and self.current in TABS:
+        if start and not touch.ud.get("swiping") and self.current in App.get_running_app().visible_tabs():
             dx, dy = touch.x - start[0], touch.y - start[1]
             if abs(dx) > dp(self.START) and abs(dx) > 2 * abs(dy):
                 touch.ud["swiping"] = True
@@ -1284,7 +1525,7 @@ class RoliApp(App):
         self.sm = SwipeManager(transition=SlideTransition(duration=0.18))
         for screen in (HomeScreen(), EditScreen(), SettingsScreen(), HistoryScreen(), CookieScreen(),
                        TradesScreen(), TradeScreen(), ItemsScreen(), AutoScreen(), AiScreen(), HelpScreen(),
-                       PickerScreen()):
+                       PickerScreen(), MarketScreen(), ItemScreen()):
             self.sm.add_widget(screen)
         # Before anything opens the Trades tab (e.g. a tapped notification): list or Roblox page.
         Clock.schedule_once(lambda *_: self.sync_direct_trades(), 0)
@@ -1302,10 +1543,11 @@ class RoliApp(App):
             from android import activity  # type: ignore
             activity.bind(on_new_intent=self._on_new_intent)
         self.nav = Factory.NavBar()
+        self.rebuild_nav()
         root = BoxLayout(orientation="vertical")
         root.add_widget(self.sm)
         root.add_widget(self.nav)
-        self.sm.bind(current=lambda _sm, name: setattr(self, "active_tab", name) if name in TABS else None)
+        self.sm.bind(current=lambda _sm, name: setattr(self, "active_tab", name) if name in ALL_TABS else None)
         self.root_box = root
         self.inset_top = self.inset_bottom = 0
         with root.canvas.before:  # fills the strip behind the gesture bar in the tab bar's colour
@@ -1315,6 +1557,56 @@ class RoliApp(App):
         Clock.schedule_once(self._apply_insets, 2.0)  # again once Android has finished laying out
         Window.bind(on_resize=lambda *_: Clock.schedule_once(self._apply_insets, 0.3))
         return root
+
+    def visible_tabs(self) -> list[str]:
+        hidden = set(self.cfg.app.hidden_tabs)
+        return [t for t in ALL_TABS if t not in hidden]
+
+    def rebuild_nav(self):
+        """The bottom tab bar, with only the tabs turned on in Settings."""
+        self.nav.clear_widgets()
+        for tab in self.visible_tabs():
+            self.nav.add_widget(NavButton(text=TAB_LABELS[tab], tab=tab))
+
+    def ensure_prices(self):
+        """Current best prices (Market tab, item screen), loaded once in the background."""
+        if self.best_prices is not None or getattr(self, "_prices_loading", False):
+            return
+        self._prices_loading = True
+
+        def work():
+            try:
+                prices = fetch_best_prices(requests.Session())
+            except Exception:
+                prices = None
+            self._prices_ready(prices)
+        threading.Thread(target=work, daemon=True).start()
+
+    @mainthread
+    def _prices_ready(self, prices):
+        self._prices_loading = False
+        if prices is not None:
+            self.best_prices = prices
+        if self.sm.current == "item":
+            self.sm.get_screen("item").refresh()
+
+    def market_row(self, item_id: int) -> ItemRow:
+        item = self.catalog.get(item_id) if self.catalog else None
+        parts = []
+        if item:
+            parts.append(f"Value {item.default_value:,}")
+            listed = self.best_prices.get(item_id) if self.best_prices is not None else None
+            price = realistic_price(listed, item.default_value, item.rap)
+            if price:
+                pct = (price - item.default_value) / item.default_value * 100 if item.default_value else 0
+                parts.append(f"Price {price:,} ({pct:+.0f}%)")
+            parts.append(item.demand_label)
+            if item.projected:
+                parts.append(f"[color={P.WARN}]Projected[/color]")
+        if item_id in self.cfg.market.watchlist:
+            parts.append(f"[color={P.ACCENT}]Watching ≥{self.cfg.market.watchlist[item_id]:g}% off[/color]")
+        return ItemRow(thumb=self.thumb_source(item_id), name=item.label if item else f"Item {item_id}",
+                       value="  ·  ".join(parts), warn=bool(item and item.projected))
 
     def _apply_insets(self, *_):
         """Keeps the header and tab bar out from under Android 15's edge-to-edge system bars."""
@@ -1356,14 +1648,14 @@ class RoliApp(App):
         if name == self.sm.current:
             return
         self._stack.clear()
-        order = list(TABS)
+        order = list(ALL_TABS)
         current = self.sm.current if self.sm.current in order else "home"
         self.sm.transition.direction = "left" if order.index(name) > order.index(current) else "right"
         self.sm.current = name
 
     def swipe_tab(self, step: int):
         """Swipe left (step +1) / right (step -1) between the main tabs, in tab-bar order."""
-        order = list(TABS)
+        order = self.visible_tabs()
         if self.sm.current in order:
             target = order.index(self.sm.current) + step
             if 0 <= target < len(order):
@@ -1374,7 +1666,7 @@ class RoliApp(App):
             self.sm.transition.direction = "right"
             self.sm.current = self._stack.pop()
             return True
-        if self.sm.current in TABS and self.sm.current != "home":
+        if self.sm.current in ALL_TABS and self.sm.current != "home":
             self.switch_tab("home")
             return True
         return False
@@ -1428,11 +1720,12 @@ class RoliApp(App):
             screen.page = False
             screen._loaded_at = 0.0
             screen.apply_view()
-        if droid.trade_watch_wanted(self.cfg):
+        if droid.service_wanted(self.cfg):
+            text = droid.WATCHING_TEXT if droid.trade_watch_wanted(self.cfg) else droid.MARKET_TEXT
             try:
-                self.engine.start(droid.WATCHING_TEXT)  # no-op if the service is already running
+                self.engine.start(text)  # no-op if the service is already running
             except Exception as e:  # e.g. Android refusing a start while the app is in the background
-                log.debug("Couldn't start the trade checks: %s", e)
+                log.debug("Couldn't start the background checks: %s", e)
 
     def thumb_source(self, item_id: int) -> str:
         return str(self.thumbs.path(item_id)) if self.thumbs.cached(item_id) else ""
@@ -1605,7 +1898,7 @@ class RoliApp(App):
         screen = droid.launch_extra("screen")
         if screen == "edit" and self.cfg.ads:
             self.edit_ad(0)
-        elif screen in TABS:
+        elif screen in ALL_TABS:
             self.switch_tab(screen)
         elif screen in ("cookie", "help"):
             self.show(screen)
@@ -1695,6 +1988,10 @@ class RoliApp(App):
             self.sm.get_screen("picker").search()
         elif self.sm.current == "items":
             self.sm.get_screen("items").refresh()
+        elif self.sm.current == "market" and self.sm.get_screen("market").mode == "items":
+            self.sm.get_screen("market").show_items()
+        elif self.sm.current == "item":
+            self.sm.get_screen("item").refresh()
 
     def owned_counts(self) -> dict[int, int] | None:
         """Item ID -> copies you own, or None when your Rolimons inventory isn't known (or is private)."""
@@ -1781,7 +2078,7 @@ class RoliApp(App):
         self._update_url = url
 
     def open_update(self):
-        droid.open_url(self._update_url or "https://github.com/rxst0/limitools/releases/latest")
+        droid.open_url(self._update_url or "https://github.com/rxst0/LimiTools/releases/latest")
 
 
 if __name__ == "__main__":
