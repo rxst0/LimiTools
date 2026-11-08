@@ -160,6 +160,9 @@ class PriceLog:
         day = int(now // DAY)
         self.points = [p for p in self.points if int(p[0] // DAY) != day] + [(now, int(total))]
         self.points = self.points[-800:]  # a bit over two years
+        self.save()
+
+    def save(self) -> None:
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"points": self.points}), encoding="utf-8")
         tmp.replace(self.path)

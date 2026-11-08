@@ -268,6 +268,32 @@ class SelfTest:
         settings.save()
         yield 1
         self.dismiss_popups()
+        # Backup and restore. Android's file picker can't be driven by a test, so there the file is written
+        # and read back through the same Java helper the picker uses; the desktop preview uses its folder.
+        from roliposter.backup import make_backup, parse_backup
+        ads_before = len(app.cfg.ads)
+        text = make_backup(app.cfg, app.price_log.points)
+        if droid.IS_ANDROID:
+            from jnius import autoclass  # type: ignore
+            uri = autoclass("android.net.Uri").fromFile(autoclass("java.io.File")(str(self.home / "selftest-backup.json")))
+            io = droid._jclass("org.roliposter.DocumentIO")
+            written = bool(io.write(droid._app_ctx(), uri, text))
+            back = io.read(droid._app_ctx(), uri)
+            back = str(back) if back is not None else ""
+        else:
+            settings.backup()
+            yield 1
+            self.dismiss_popups()
+            box = {}
+            droid.open_document(lambda t: box.__setitem__("t", t))
+            written, back = True, box.get("t") or ""
+        self.record("backup file is written and read back", written and parse_backup(back).config == app.cfg)
+        settings._apply_restore(parse_backup(back), "add")  # the same ads again: nothing duplicated
+        yield 1
+        self.dismiss_popups()
+        self.record("restoring (add) keeps one copy of each ad and saves a safety copy first",
+                    len(load_config(config_path()).ads) == ads_before
+                    and any((self.home / "backups").glob("before-restore-*.json")))
 
         # History tab; Help (opened from Settings) goes back to Settings; Back from a tab returns to Ads.
         app.switch_tab("history")

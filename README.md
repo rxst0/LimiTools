@@ -151,6 +151,18 @@ The **Market** tab has two parts:
 
 **New limited alerts** (Settings → New limiteds and watchlist) notify you about new limiteds in the Roblox catalog, with the price, number of copies, creator and description; tap to open the item on Roblox. New UGC limiteds come out many times a day, so you can limit alerts to verified creators, a maximum price and a maximum number of copies. New limited alerts and watchlist deals use public data: they don't need **Read my trades directly** or a Roblox sign-in, and they work with the app closed.
 
+## Backup and restore
+
+**Settings → Backup and restore** (Android) or **Settings → Back up / Restore** (Windows) saves your ads, settings, watchlist and Items price history to a `.json` file, and restores one. Backups made on your phone restore on the PC and the other way round.
+
+- **Not in backups:** your Rolimons cookie, your Roblox sign-in and your AI API key. A backup file can end up anywhere (Discord, a cloud drive), so after restoring on a new device, sign in again and re-enter your AI key.
+- **Replace** uses everything from the backup; **Add** keeps your settings and adds the backup's ads and watched items (without duplicates).
+- Before restoring, your current setup is saved to a `backups` folder (the last five are kept), so a wrong restore can be undone.
+
+## Battery
+
+**Settings → Background checks** (Android) sets how often background checks run: **Fast** (2 minutes), **Normal** (5) or **Battery saver** (15). It covers new and accepted trades, notable followers, new limiteds and watchlist deals; posting ads isn't affected.
+
 ## Tabs (Android)
 
 **Settings → Tabs** turns off the tabs you don't use (Trades, Items, Market, Auto, History). Ads and Settings always stay. AI recommendations open from **Settings → AI trade recommendations**.

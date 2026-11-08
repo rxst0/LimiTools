@@ -472,7 +472,8 @@ def sign_out_web() -> None:
 # Android's system class loader, which doesn't know them. So they're looked up once by prime_java() on
 # the main thread and reused from any thread.
 APP_CLASSES = ("org.roliposter.RobloxSession", "org.roliposter.RobloxApi", "org.roliposter.TradeWatcher",
-               "org.roliposter.ForegroundText", "org.roliposter.AutoAccept", "org.roliposter.SocialAlerts")
+               "org.roliposter.ForegroundText", "org.roliposter.AutoAccept", "org.roliposter.SocialAlerts",
+               "org.roliposter.DocumentIO")
 _classes: dict = {}
 _app_context = None
 
@@ -561,6 +562,70 @@ def trade_watch_wanted(cfg) -> bool:
     social = cfg.app.notifications and cfg.social_alerts.enabled
     return (IS_ANDROID and cfg.app.direct_trades and (alerts or social or cfg.auto_accept.enabled)
             and RobloxDirect.signed_in())
+
+
+# ---- backup files (Android's save / open screen) -------------------------------------------------
+REQUEST_SAVE_FILE, REQUEST_OPEN_FILE = 4101, 4102
+_file_callbacks: dict = {}
+_file_hook_bound = False
+
+
+def _bind_file_results() -> None:
+    global _file_hook_bound
+    if _file_hook_bound:
+        return
+    from android import activity  # type: ignore
+    activity.bind(on_activity_result=_on_file_result)
+    _file_hook_bound = True
+
+
+def _on_file_result(request_code, result_code, intent) -> None:
+    pending = _file_callbacks.pop(request_code, None)
+    if pending is None:
+        return
+    kind, payload, callback = pending
+    uri = intent.getData() if (result_code == -1 and intent is not None) else None  # -1 = RESULT_OK
+    from kivy.clock import Clock
+    if uri is None:
+        return Clock.schedule_once(lambda *_: callback(None), 0)  # cancelled
+    io = _jclass("org.roliposter.DocumentIO")
+    result = bool(io.write(_app_ctx(), uri, payload)) if kind == "save" else io.read(_app_ctx(), uri)
+    result = str(result) if kind == "open" and result is not None else result
+    Clock.schedule_once(lambda *_: callback(result), 0)
+
+
+def save_document(filename: str, text: str, callback, desktop_folder: Path | None = None) -> None:
+    """Lets the user choose where to save `text`; callback(True/False, or None if cancelled)."""
+    if not IS_ANDROID:  # desktop preview: a "backups" folder next to the preview data
+        folder = desktop_folder or data_home() / "backups"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / filename).write_text(text, encoding="utf-8")
+        return callback(True)
+    from jnius import autoclass  # type: ignore
+    _bind_file_results()
+    Intent = autoclass("android.content.Intent")
+    intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+    intent.addCategory(Intent.CATEGORY_OPENABLE)
+    intent.setType("application/json")
+    intent.putExtra(Intent.EXTRA_TITLE, filename)
+    _file_callbacks[REQUEST_SAVE_FILE] = ("save", text, callback)
+    autoclass("org.kivy.android.PythonActivity").mActivity.startActivityForResult(intent, REQUEST_SAVE_FILE)
+
+
+def open_document(callback, desktop_folder: Path | None = None) -> None:
+    """Lets the user pick a file; callback(text, or None if cancelled / unreadable)."""
+    if not IS_ANDROID:  # desktop preview: the newest file in the "backups" folder
+        folder = desktop_folder or data_home() / "backups"
+        files = sorted(folder.glob("*.json"), key=lambda f: f.stat().st_mtime) if folder.exists() else []
+        return callback(files[-1].read_text(encoding="utf-8") if files else None)
+    from jnius import autoclass  # type: ignore
+    _bind_file_results()
+    Intent = autoclass("android.content.Intent")
+    intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+    intent.addCategory(Intent.CATEGORY_OPENABLE)
+    intent.setType("*/*")  # backups often come back from Drive or Discord without a JSON type
+    _file_callbacks[REQUEST_OPEN_FILE] = ("open", "", callback)
+    autoclass("org.kivy.android.PythonActivity").mActivity.startActivityForResult(intent, REQUEST_OPEN_FILE)
 
 
 def market_watch_wanted(cfg) -> bool:

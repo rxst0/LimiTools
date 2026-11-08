@@ -55,6 +55,8 @@ from roliposter.portfolio import (RANGES, PriceLog, fetch_best_prices, fetch_his
                                   realistic_price, totals)
 from roliposter.ai_advisor import PROVIDERS, Advice, AdvisorError, ask, build_context, check  # noqa: E402
 from roliposter.market import lookup_username  # noqa: E402
+from roliposter.backup import (BackupError, apply_backup, backup_filename, make_backup,  # noqa: E402
+                               merge_price_history, parse_backup, save_safety_copy, summary)
 from roliposter.state import PostHistory  # noqa: E402
 from roliposter.thumbs import ThumbnailCache  # noqa: E402
 from roliposter.updates import check_for_update  # noqa: E402
@@ -88,6 +90,12 @@ Items: search any limited, open it for its value, RAP, demand, trend and current
 
 [b]New limited alerts (optional)[/b]
 Settings > New limiteds and watchlist notifies you about new limiteds in the Roblox catalog, with the price, copies and description. Use the filters (verified creators, max price, max copies): new UGC limiteds come out many times a day. No Roblox sign-in needed.
+
+[b]Backup and restore[/b]
+Settings > Backup and restore saves your ads, settings and watchlist to a file, or restores one (also one made in the Windows app). Your Rolimons cookie, Roblox sign-in and AI key are never in backups. Your current setup is saved before restoring, so you can undo it.
+
+[b]Battery[/b]
+Settings > Background checks: Fast (every 2 minutes), Normal (5) or Battery saver (15).
 
 [b]Tabs[/b]
 Settings > Tabs turns off tabs you don't use. Ads and Settings always stay.
@@ -607,6 +615,52 @@ class SettingsScreen(Screen):
         for option in CHECK_SPEEDS:
             self.ids[f"speed_{option}"].selected = option == self._speed
 
+    # ---- backup and restore --------------------------------------------------------------------
+    def backup(self):
+        app = App.get_running_app()
+        text = make_backup(app.cfg, app.price_log.points)
+
+        def saved(ok):
+            if ok:
+                app.toast("Backup saved")
+            elif ok is False:
+                app.notice("Backup", "Couldn't save the backup there. Try another folder.")
+        droid.save_document(backup_filename(), text, saved)
+
+    def restore(self):
+        app = App.get_running_app()
+
+        def picked(text):
+            if text is None:
+                return  # cancelled
+            try:
+                restored = parse_backup(text)
+            except BackupError as e:
+                return app.notice("Restore", str(e))
+            app.notice("Restore this backup?",
+                       f"It has {summary(restored)}\n\nReplace: use everything from the backup.\n"
+                       "Add: keep your settings and add the backup's ads and watched items.\n\n"
+                       "Your current setup is saved first, so you can undo this.",
+                       (("Cancel", None), ("Add", lambda: self._apply_restore(restored, "add")),
+                        ("Replace", lambda: self._apply_restore(restored, "replace"))))
+        droid.open_document(picked)
+
+    def _apply_restore(self, restored, mode: str):
+        app = App.get_running_app()
+        save_safety_copy(HOME / "backups", app.cfg, app.price_log.points)
+        app.cfg = apply_backup(app.cfg, restored, mode)
+        app.persist()
+        if restored.price_history:
+            app.price_log.points = [tuple(p) for p in merge_price_history(app.price_log.points,
+                                                                           restored.price_history)]
+            app.price_log.save()
+        app.apply_trade_notifications()
+        app.rebuild_nav()
+        self.on_pre_enter()
+        app.notice("Restored", f"{'Replaced your setup with' if mode == 'replace' else 'Added'} the backup. "
+                               "Sign in to Rolimons again if you're on a new device, and re-enter your AI key "
+                               "if you use one.")
+
     def forget_ai_key(self):
         app = App.get_running_app()
         save_env_value(env_path(), PROVIDERS[self._ai_provider]["key_env"], "")
@@ -1111,7 +1165,6 @@ class MarketScreen(Screen):
 
     # ---- players -------------------------------------------------------------------------------
     def lookup(self):
-        app = App.get_running_app()
         name = self.ids.search.text.strip()
         if not name or self.busy:
             return

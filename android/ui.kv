@@ -745,6 +745,21 @@
                         text: 'Watchlist deal alerts (Market tab > item > Watch)'
                 Card:
                     Title:
+                        text: 'Backup and restore'
+                    Muted:
+                        text: 'Save your ads, settings and watchlist to a file (Downloads, Google Drive, Discord...), or restore one, also from the Windows app. Your Rolimons cookie, Roblox sign-in and AI key are never in backups: sign in again after restoring.'
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(46)
+                        spacing: dp(8)
+                        FlatButton:
+                            text: 'Back up'
+                            on_release: root.backup()
+                        FlatButton:
+                            text: 'Restore'
+                            on_release: root.restore()
+                Card:
+                    Title:
                         text: 'Background checks'
                     Muted:
                         text: 'How often the app checks for new trades, accepted trades, notable followers, new limiteds and watchlist deals while it runs in the background. Slower uses less battery and data; alerts can then arrive a little later. Posting ads is not affected.'

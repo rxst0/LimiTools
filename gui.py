@@ -8,7 +8,8 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 import requests
 
@@ -21,7 +22,9 @@ from roliposter.cookie import (COOKIE_ENV_VAR, clean_cookie, cookie_info, get_co
 from roliposter.inventory import Inventory, fetch_inventory, missing_offer_items
 from roliposter.items import ItemCatalog
 from roliposter.logsetup import REDACTOR, setup_logging
-from roliposter.paths import cache_dir, config_path, env_path, log_dir, resource_path, state_path
+from roliposter.backup import (BackupError, apply_backup, backup_filename, make_backup, parse_backup,
+                               save_safety_copy, summary)
+from roliposter.paths import app_dir, cache_dir, config_path, env_path, log_dir, resource_path, state_path
 from roliposter.poster import AuthError, Poster, fmt_duration
 from roliposter.startup import StartupError, fetch_catalog_with_retry, prepare
 from roliposter.state import PostHistory
@@ -587,12 +590,62 @@ class SettingsPage(Page):
             row=rows[right], column=0, columnspan=2, sticky="w", pady=(10, 0))
         rows[right] += 1
 
+        section(right, "Backup and restore")
+        note(right, "Save your ads and settings to a file, or restore one (also from the Android app). Your "
+                    "Rolimons cookie and Roblox sign-in are never in backups.")
+        buttons = ttk.Frame(right)
+        ttk.Button(buttons, text="Back up...", command=self._backup).pack(side="left")
+        ttk.Button(buttons, text="Restore...", command=self._restore).pack(side="left", padx=(8, 0))
+        buttons.grid(row=rows[right], column=0, columnspan=2, sticky="w", pady=(10, 0))
+        rows[right] += 1
+
         ttk.Separator(outer).pack(fill="x", pady=16)
         foot = ttk.Frame(outer)
         foot.pack(fill="x")
         self.saved = ttk.Label(foot, text="", style="Muted.TLabel")
         self.saved.pack(side="left")
         ttk.Button(foot, text="Save settings", style="Accent.TButton", command=self._save).pack(side="right")
+
+    def _backup(self) -> None:
+        path = filedialog.asksaveasfilename(parent=self, title="Save backup", initialfile=backup_filename(),
+                                            defaultextension=".json", filetypes=[("LimiTools backup", "*.json")])
+        if not path:
+            return
+        try:
+            Path(path).write_text(make_backup(self.app.cfg), encoding="utf-8")
+        except OSError as e:
+            messagebox.showwarning("Backup", f"Couldn't save the backup: {e}", parent=self)
+            return
+        messagebox.showinfo("Backup", "Backup saved.", parent=self)
+
+    def _restore(self) -> None:
+        path = filedialog.askopenfilename(parent=self, title="Restore backup",
+                                          filetypes=[("LimiTools backup", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            restored = parse_backup(Path(path).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError) as e:
+            messagebox.showwarning("Restore", f"Couldn't read that file: {e}", parent=self)
+            return
+        except BackupError as e:
+            messagebox.showwarning("Restore", str(e), parent=self)
+            return
+        answer = messagebox.askyesnocancel(
+            "Restore this backup?",
+            f"It has {summary(restored)}\n\nYes: replace everything with the backup.\n"
+            "No: keep your settings and add the backup's ads.\nCancel: do nothing.\n\n"
+            "Your current setup is saved first, so you can undo this.", parent=self)
+        if answer is None:
+            return
+        if self.app._is_running():
+            messagebox.showwarning("Restore", "Stop posting first, then restore.", parent=self)
+            return
+        save_safety_copy(app_dir() / "backups", self.app.cfg)
+        self.app.cfg = apply_backup(self.app.cfg, restored, "replace" if answer else "add")
+        self.app.persist()
+        self.refresh()
+        messagebox.showinfo("Restore", "Restored. If this is a new PC, set your Rolimons cookie again.", parent=self)
 
     def _forget_roblox(self) -> None:
         if self.app.trades_page.sign_out():
