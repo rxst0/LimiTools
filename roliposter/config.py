@@ -63,6 +63,17 @@ class AiSettings:
 
 
 @dataclass
+class SocialAlertSettings:
+    """Android, with "Read my trades directly": alerts when a notable account sends a friend request or
+    follows you. Notable = verified (if `verified`) or at least `min_followers` followers (0 = ignore count)."""
+    enabled: bool = False
+    min_followers: int = 1000
+    verified: bool = True
+    friend_requests: bool = True
+    follows: bool = True
+
+
+@dataclass
 class AppSettings:
     close_to_tray: bool = True        # keep posting in the tray when the window is closed
     auto_start_posting: bool = False  # start posting as soon as the app opens
@@ -88,6 +99,7 @@ class Config:
     app: AppSettings = field(default_factory=AppSettings)
     auto_accept: AutoAcceptSettings = field(default_factory=AutoAcceptSettings)
     ai: AiSettings = field(default_factory=AiSettings)
+    social_alerts: SocialAlertSettings = field(default_factory=SocialAlertSettings)
     ads: list[Ad] = field(default_factory=list)
 
     def enabled_ads(self) -> list[Ad]:
@@ -126,6 +138,7 @@ def config_from_dict(data: dict) -> Config:
         app = data.get("app", {}) or {}
         aa = data.get("auto_accept", {}) or {}
         ai = data.get("ai", {}) or {}
+        sa = data.get("social_alerts", {}) or {}
         return Config(
             roblox_user_id=int(data.get("roblox_user_id", 0) or 0),
             rotation=str(data.get("rotation", "sequential")).lower(),
@@ -164,6 +177,10 @@ def config_from_dict(data: dict) -> Config:
             ),
             ai=AiSettings(enabled=bool(ai.get("enabled", False)), provider=str(ai.get("provider", "claude")).lower(),
                           model=str(ai.get("model", "") or "").strip()),
+            social_alerts=SocialAlertSettings(
+                enabled=bool(sa.get("enabled", False)), min_followers=int(sa.get("min_followers", 1000)),
+                verified=bool(sa.get("verified", True)), friend_requests=bool(sa.get("friend_requests", True)),
+                follows=bool(sa.get("follows", True))),
             ads=ads,
         )
     except (TypeError, ValueError, AttributeError) as e:
@@ -217,6 +234,13 @@ def validate_config(cfg: Config) -> list[str]:
             errors.append(f"Auto-accept minimum {label} gain must be between -100% and 1000%.")
     if aa.enabled and aa.min_value_gain is None and aa.min_rap_gain is None and aa.min_price_gain is None:
         errors.append("Auto-accept needs at least one minimum gain (value, RAP or price).")
+    sa = cfg.social_alerts
+    if sa.min_followers < 0:
+        errors.append("Notable accounts: the minimum follower count can't be negative.")
+    if sa.enabled and not (sa.friend_requests or sa.follows):
+        errors.append("Notable accounts: pick friend requests, follows, or both.")
+    if sa.enabled and sa.min_followers == 0 and not sa.verified:
+        errors.append("Notable accounts: set a minimum follower count or turn on verified accounts.")
     if cfg.ai.provider not in ("claude", "openai"):
         errors.append('ai.provider must be "claude" or "openai".')
     if not cfg.ads:

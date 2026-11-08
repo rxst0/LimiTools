@@ -162,6 +162,12 @@ class SelfTest:
         # tests/test_android_guards.py.)
         droid.push_auto_accept(app.cfg)
         self.record("auto-accept rules and log are readable", isinstance(droid.auto_accept_log(), list))
+        droid.push_social_alerts(app.cfg)
+        social = droid._jclass("org.roliposter.SocialAlerts")
+        self.record("notable-account alert rules reach the background checker",
+                    social.enabled(droid._app_ctx()) == app.cfg.social_alerts.enabled
+                    and social.tradeAlertsWanted(droid._app_ctx()) == (app.cfg.app.notifications
+                                                                       and app.cfg.app.trade_notifications))
         # The trades list calls Java from a worker thread, which can't look up the app's classes itself.
         threaded = {}
 

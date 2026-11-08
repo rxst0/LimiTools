@@ -52,12 +52,21 @@ public class TradeWatcher {
                 return;
             }
             if (!RobloxSession.isSignedIn(context)) return;
+            if (!SocialAlerts.tradeAlertsWanted(context) && !AutoAccept.enabled(context)) {
+                SocialAlerts.check(context);  // running only for follower / friend request alerts
+                return;
+            }
             TradeNotifier notifier = new TradeNotifier(context);
             JSONArray inbound = list(context, notifier, "inbound");
             if (inbound == null) return;
             notifier.reportDirect(inbound.toString());
-            // Every other check: did someone accept a trade you sent? (It moves from sent to completed.)
-            if (round++ % 2 != 0) return;
+            // Alternate the extra checks so each round makes only a few requests:
+            // odd rounds: notable followers and friend requests; even rounds: accepted sent trades.
+            if (round++ % 2 != 0) {
+                SocialAlerts.check(context);
+                return;
+            }
+            // Did someone accept a trade you sent? (It moves from sent to completed.)
             JSONArray outbound = list(context, notifier, "outbound");
             JSONArray completed = outbound == null ? null : list(context, notifier, "completed");
             if (completed != null) notifier.reportAccepted(outbound.toString(), completed.toString());

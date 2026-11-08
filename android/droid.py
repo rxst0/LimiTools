@@ -469,7 +469,7 @@ def sign_out_web() -> None:
 # Android's system class loader, which doesn't know them. So they're looked up once by prime_java() on
 # the main thread and reused from any thread.
 APP_CLASSES = ("org.roliposter.RobloxSession", "org.roliposter.RobloxApi", "org.roliposter.TradeWatcher",
-               "org.roliposter.ForegroundText", "org.roliposter.AutoAccept")
+               "org.roliposter.ForegroundText", "org.roliposter.AutoAccept", "org.roliposter.SocialAlerts")
 _classes: dict = {}
 _app_context = None
 
@@ -555,8 +555,22 @@ def trade_watch_wanted(cfg) -> bool:
     """Should the background service check for new trades? Only with "Read my trades directly" on, for
     new-trade alerts or auto-accept."""
     alerts = cfg.app.notifications and cfg.app.trade_notifications
-    return (IS_ANDROID and cfg.app.direct_trades and (alerts or cfg.auto_accept.enabled)
+    social = cfg.app.notifications and cfg.social_alerts.enabled
+    return (IS_ANDROID and cfg.app.direct_trades and (alerts or social or cfg.auto_accept.enabled)
             and RobloxDirect.signed_in())
+
+
+def push_social_alerts(cfg) -> None:
+    """Hands the notable-follower rules (and whether trade alerts are on) to org.roliposter.SocialAlerts."""
+    if not IS_ANDROID:
+        return
+    import json
+    sa = cfg.social_alerts
+    rules = {"enabled": bool(sa.enabled and cfg.app.direct_trades and cfg.app.notifications),
+             "user_id": cfg.roblox_user_id, "min_followers": sa.min_followers, "verified": sa.verified,
+             "friend_requests": sa.friend_requests, "follows": sa.follows,
+             "trade_alerts": bool(cfg.app.notifications and cfg.app.trade_notifications)}
+    _jclass("org.roliposter.SocialAlerts").setRules(_app_ctx(), json.dumps(rules))
 
 
 def push_auto_accept(cfg) -> None:

@@ -658,6 +658,28 @@
                         on_release: root.sign_out_roblox()
                 Card:
                     Title:
+                        text: 'Notable followers and friend requests'
+                    Muted:
+                        text: 'Needs "Read my trades directly". Notifies you when a verified account, or one with at least this many followers, sends you a friend request or follows you. Tap the alert to open their profile.'
+                    SettingRow:
+                        id: sa_on
+                        text: 'Notify me about notable accounts'
+                    FieldLabel:
+                        text: 'MINIMUM FOLLOWERS (0 = ONLY VERIFIED)'
+                    Field:
+                        id: sa_min
+                        input_filter: 'int'
+                    SettingRow:
+                        id: sa_verified
+                        text: 'Always notify for verified accounts'
+                    SettingRow:
+                        id: sa_requests
+                        text: 'Friend requests'
+                    SettingRow:
+                        id: sa_follows
+                        text: 'New followers'
+                Card:
+                    Title:
                         text: 'AI trade recommendations'
                     Muted:
                         text: "Connect Claude or ChatGPT with your own API key. On the AI tab it suggests upgrades and downgrades for your inventory, using Rolimons values, RAP, demand, trend and current prices. Only when you ask: each request costs a few cents on your API account. Your items and market data are sent to the AI company; your Roblox and Rolimons sign-ins never are."

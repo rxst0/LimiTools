@@ -40,3 +40,16 @@ def test_ai_settings_default_off_and_round_trip():
     assert config_from_dict(asdict(cfg)).ai == cfg.ai
     cfg.ai.provider = "bard"
     assert any("ai.provider" in e for e in validate_config(cfg))
+
+
+def test_social_alerts_defaults_round_trip_and_validation():
+    cfg = config_from_dict({})
+    sa = cfg.social_alerts
+    assert (sa.enabled, sa.min_followers, sa.verified, sa.friend_requests, sa.follows) == (False, 1000, True, True, True)
+    cfg = config_from_dict({"social_alerts": {"enabled": True, "min_followers": 50000, "follows": False}})
+    assert config_from_dict(asdict(cfg)).social_alerts == cfg.social_alerts
+    assert not [e for e in validate_config(cfg) if "Notable" in e]
+    cfg.social_alerts.friend_requests = False
+    assert any("pick friend requests" in e for e in validate_config(cfg))
+    cfg.social_alerts.friend_requests, cfg.social_alerts.min_followers, cfg.social_alerts.verified = True, 0, False
+    assert any("minimum follower count" in e for e in validate_config(cfg))

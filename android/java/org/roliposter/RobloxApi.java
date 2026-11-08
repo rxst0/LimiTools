@@ -45,6 +45,19 @@ public class RobloxApi {
         if ("trade".equals(kind) && TRADE_ID.matcher(arg).matches()) {
             return "https://trades.roblox.com/v2/trades/" + arg;
         }
+        // Notable followers and friend requests (SocialAlerts). arg is a Roblox user ID where needed.
+        if ("friend_requests".equals(kind)) {
+            return "https://friends.roblox.com/v1/my/friends/requests?limit=25&sortOrder=Desc";
+        }
+        if ("followers".equals(kind) && TRADE_ID.matcher(arg).matches()) {
+            return "https://friends.roblox.com/v1/users/" + arg + "/followers?limit=25&sortOrder=Desc";
+        }
+        if ("follower_count".equals(kind) && TRADE_ID.matcher(arg).matches()) {
+            return "https://friends.roblox.com/v1/users/" + arg + "/followers/count";
+        }
+        if ("user".equals(kind) && TRADE_ID.matcher(arg).matches()) {
+            return "https://users.roblox.com/v1/users/" + arg;
+        }
         return null;
     }
 

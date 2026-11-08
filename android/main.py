@@ -80,6 +80,9 @@ The Items tab shows the limiteds in your Rolimons inventory, their total value a
 [b]Read my trades directly (optional)[/b]
 Turn this on in Settings to see your trades as a list in the app (received, sent, completed, inactive) with item pictures and Rolimons values, sorted newest first or by best or worst deal, and to get alerts for new and accepted trades even when the app is closed. To do this, the app keeps an encrypted copy of your Roblox sign-in (.ROBLOSECURITY) on this phone and uses it only to read your trades. It's never sent anywhere except Roblox. It can't be used to decline or send trades, and it only accepts trades if you turn on live auto-accept. Turning the option off deletes the copy.
 
+[b]Notable followers and friend requests (optional)[/b]
+Settings > Notable followers and friend requests notifies you when a verified account, or one with at least your minimum number of followers, sends you a friend request or follows you. It needs "Read my trades directly". Tap the alert to open their Roblox profile.
+
 [b]AI recommendations (optional)[/b]
 Turn on Settings > AI trade recommendations, pick Claude or ChatGPT and paste your own API key from that company. On the AI tab, tap Get recommendations: the AI looks at your items and the Rolimons market (value, RAP, demand, trend, projected/hyped/rare, current prices, your value history) and suggests upgrades, downgrades and items to hold. It only runs when you tap the button, and each run costs a few cents on your API account. Your items and market data go to the AI company; your Roblox and Rolimons sign-ins never do. Suggestions can be wrong: check every trade yourself.
 
@@ -557,6 +560,9 @@ class SettingsScreen(Screen):
         ids.trade_notify_on.active = c.app.trade_notifications
         ids.direct_trades.active = c.app.direct_trades
         ids.updates_on.active = c.app.check_updates
+        sa = c.social_alerts
+        ids.sa_on.active, ids.sa_min.text = sa.enabled, str(sa.min_followers)
+        ids.sa_verified.active, ids.sa_requests.active, ids.sa_follows.active = sa.verified, sa.friend_requests, sa.follows
         ids.ai_on.active = c.ai.enabled
         self.set_ai_provider(c.ai.provider, model=c.ai.model)
         self.refresh_battery()
@@ -615,6 +621,7 @@ class SettingsScreen(Screen):
             jmin, jmax = float(ids.jmin.text or 0), float(ids.jmax.text or 0)
             max_ads = int(ids.max_ads.text or 0)
             overpay = float(ids.overpay.text or 0)
+            sa_min = int(ids.sa_min.text or 0)
         except ValueError:
             return app.notice("Settings", "Please enter numbers only.")
         c = copy.deepcopy(app.cfg)
@@ -632,6 +639,12 @@ class SettingsScreen(Screen):
         c.app.trade_notifications = ids.trade_notify_on.active
         c.app.direct_trades = ids.direct_trades.active
         c.app.check_updates = ids.updates_on.active
+        sa = c.social_alerts
+        sa.enabled, sa.min_followers = ids.sa_on.active, sa_min
+        sa.verified, sa.friend_requests, sa.follows = ids.sa_verified.active, ids.sa_requests.active, ids.sa_follows.active
+        if sa.enabled and not c.app.direct_trades:
+            return app.notice("Notable accounts", 'This needs "Read my trades directly" turned on (friend requests '
+                                                  "are only visible to you when signed in).")
         c.ai.enabled = ids.ai_on.active
         c.ai.provider = self._ai_provider
         c.ai.model = ids.ai_model.text.strip()
@@ -1399,6 +1412,7 @@ class RoliApp(App):
         direct = self.cfg.app.direct_trades and droid.RobloxDirect.available
         droid.RobloxDirect.set_enabled(direct)  # off deletes the stored sign-in
         droid.push_auto_accept(self.cfg)
+        droid.push_social_alerts(self.cfg)
         droid.set_trade_notifications(enabled and not direct)
         if enabled and not direct and self.trades_view:
             self.trades_view.preload(*self._trades_area())
@@ -1560,6 +1574,7 @@ class RoliApp(App):
             self.cfg.roblox_user_id = info.player_id
             self.inventory = None
             self.persist()
+            droid.push_social_alerts(self.cfg)  # follower alerts watch this account
             threading.Thread(target=self._load_inventory, daemon=True).start()
         self.update_cookie_status()
         who = f" as {info.player_name}" if info and info.player_name else ""

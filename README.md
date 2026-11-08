@@ -129,7 +129,9 @@ How it works, and what changes:
 - **It's used to read trades** (and, only if you turn on live auto-accept, to accept the ones that pass your
   rules). The Java code that holds the cookie sends a fixed list of read-only requests:
   `GET trades.roblox.com/v1/trades/{inbound|outbound|completed|inactive}` and
-  `GET trades.roblox.com/v2/trades/{id}`. The one other request is `POST trades.roblox.com/v1/trades/{id}/accept`,
+  `GET trades.roblox.com/v2/trades/{id}`, and for notable-account alerts `GET friends.roblox.com/v1/my/friends/requests`,
+  `GET friends.roblox.com/v1/users/{id}/followers`, `GET friends.roblox.com/v1/users/{id}/followers/count` and
+  `GET users.roblox.com/v1/users/{id}`. The one other request is `POST trades.roblox.com/v1/trades/{id}/accept`,
   which only the auto-accept code makes, in live mode, after a trade passed your rules. No code in the app
   declines, counters or sends a trade, or changes anything else on your account. The cookie is only used by
   that Java code (the app's Python side never asks for it), isn't logged, and is only sent to Roblox. (For the gain/loss in alerts it
@@ -140,6 +142,10 @@ How it works, and what changes:
   Android's cloud backup is turned off for this app, so the copy isn't uploaded.
 - Anyone with your unlocked, rooted phone could in principle get the cookie, just like from any browser
   on that phone. If you'd rather not take that risk, leave the option off.
+
+## Notable followers and friend requests (Android)
+
+Off by default, and it needs **Read my trades directly** (Roblox only shows your friend requests when you're signed in). In **Settings → Notable followers and friend requests**, set a minimum follower count and whether verified accounts always count. About every 3 minutes the background checker looks at your newest friend requests and followers, and notifies you when one is notable: *"Verified user X sent you a friend request"* or *"X (12.4K followers) followed you"*. Tap it to open their Roblox profile. The first check only remembers who's already there, so you're not flooded with old ones.
 
 ## AI recommendations (Android)
 
