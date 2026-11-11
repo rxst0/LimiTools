@@ -39,8 +39,8 @@ import runner  # noqa: E402
 from roliposter import __version__  # noqa: E402
 from roliposter import events as ev  # noqa: E402
 from roliposter import palette as P  # noqa: E402
-from roliposter.config import (CHECK_SPEEDS, MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, MAX_TRACKED, OPTIONAL_TABS,  # noqa: E402
-                               VALID_TAGS, Ad, Config,
+from roliposter.config import (AD_ALERT_KINDS, CHECK_SPEEDS, MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, MAX_TRACKED, OPTIONAL_TABS,  # noqa: E402
+                               VALID_TAGS, Ad, AdAlertSettings, Config,
                                ConfigError, load_config, save_config, validate_config)
 from roliposter.cookie import (COOKIE_ENV_VAR, clean_cookie, cookie_info, get_cookie,  # noqa: E402
                                load_env_file, looks_like_cookie, save_env_value)
@@ -54,6 +54,7 @@ from roliposter.roblox_trades import (KINDS, KIND_LABELS, ago, parse_details, pa
 from roliposter.portfolio import (RANGES, PriceLog, fetch_best_prices, fetch_history,  # noqa: E402
                                   realistic_price, totals)
 from roliposter.ai_advisor import PROVIDERS, Advice, AdvisorError, ask, build_context, check  # noqa: E402
+from roliposter.ad_match import ROBUX_RATE, find_matches  # noqa: E402
 from roliposter.item_intel import fetch_item_intel  # noqa: E402
 from roliposter.trade_log import TradeLog  # noqa: E402
 from roliposter.trade_planner import plan_downgrade, plan_upgrade  # noqa: E402
@@ -1677,6 +1678,164 @@ class TradeLogScreen(Screen):
         self.refresh()
 
 
+class AdAlertsScreen(Screen):
+    """Trade ad alerts: notifies you about new Rolimons trade ads you could take with your items, by your
+    conditions. Tapping one opens a Roblox trade with that player; you send it yourself."""
+    status_text = StringProperty("")
+    busy = BooleanProperty(False)
+    DEMAND_CHOICES = ((-1, "Any"), (1, "Low+"), (2, "Normal+"), (3, "High+"))
+
+    def on_pre_enter(self):
+        al = App.get_running_app().cfg.ad_alerts
+        ids = self.ids
+        ids.al_on.active, ids.al_projected.active, ids.al_tags.active = al.enabled, al.block_projected, al.tag_ads
+        ids.al_gain.text = f"{al.min_gain:g}"
+        ids.al_min.text, ids.al_max.text = str(al.min_value or ""), str(al.max_value or "")
+        self.never_give = list(al.never_give)
+        self.set_kind(al.kind)
+        self.set_demand(al.min_demand)
+        self.refresh_never()
+
+    def set_kind(self, kind: str):
+        self._kind = kind if kind in AD_ALERT_KINDS else "any"
+        for k in AD_ALERT_KINDS:
+            self.ids[f"al_kind_{k}"].selected = k == self._kind
+
+    def set_demand(self, demand: int):
+        self._demand = demand if demand in dict(self.DEMAND_CHOICES) else -1
+        for value, _label in self.DEMAND_CHOICES:
+            self.ids[f"al_demand_{value + 1}"].selected = value == self._demand
+
+    def refresh_never(self):
+        app = App.get_running_app()
+        box = self.ids.never_box
+        box.clear_widgets()
+        for i, item_id in enumerate(self.never_give):
+            row = app.item_row(item_id)
+            row.add_action("×", lambda n=i: self.remove_never(n))
+            box.add_widget(row)
+        if not self.never_give:
+            box.add_widget(Factory.Muted(text="None: any of your items can be suggested."))
+        app.request_thumbs(self.never_give)
+
+    def add_never(self):
+        app = App.get_running_app()
+        if len(self.never_give) >= 50:
+            return app.toast("Up to 50 items.")
+        app.sm.get_screen("picker").open_for("offer", on_pick=self._never_picked)
+        app.show("picker")
+
+    def _never_picked(self, item_id: int) -> bool:
+        if item_id not in self.never_give:
+            self.never_give.append(item_id)
+        self.refresh_never()
+        return True
+
+    def remove_never(self, index: int):
+        self.never_give.pop(index)
+        self.refresh_never()
+
+    def _rules(self):
+        """The conditions on screen, or None (after telling you) if a number is wrong."""
+        app = App.get_running_app()
+        ids = self.ids
+        try:
+            gain = float(ids.al_gain.text or 0)
+            low, high = int(ids.al_min.text or 0), int(ids.al_max.text or 0)
+        except ValueError:
+            app.notice("Trade ad alerts", "Please enter numbers only.")
+            return None
+        return AdAlertSettings(enabled=ids.al_on.active, min_gain=gain, min_value=low, max_value=high,
+                               kind=self._kind, block_projected=ids.al_projected.active, min_demand=self._demand,
+                               tag_ads=ids.al_tags.active, never_give=list(self.never_give))
+
+    def save(self):
+        app = App.get_running_app()
+        rules = self._rules()
+        if rules is None:
+            return
+        c = copy.deepcopy(app.cfg)
+        c.ad_alerts = rules
+        problems = [e for e in validate_config(c) if e.startswith("Trade ad alerts")]
+        if problems:
+            return app.notice("Trade ad alerts", "\n".join(problems))
+        app.cfg = c
+        app.persist()
+        app.apply_trade_notifications()  # starts the background checks if they're needed
+        if rules.enabled:
+            if c.roblox_user_id <= 0:
+                return app.notice("Trade ad alerts", "Saved. The alerts need to know your items: sign in to "
+                                                     "Rolimons on the Ads tab first.")
+            if not c.app.notifications:
+                return app.notice("Trade ad alerts", "Saved, but notifications are off in Settings.")
+            droid.request_notification_permission()
+        app.toast("Saved")
+
+    def check_now(self):
+        """Matches among the trade ads on Rolimons right now, with these conditions (saved or not)."""
+        app = App.get_running_app()
+        rules = self._rules()
+        if rules is None or self.busy:
+            return
+        if app.owned_counts() is None:
+            self.status_text = ("Sign in to Rolimons on the Ads tab first." if app.cfg.roblox_user_id <= 0 else
+                                "Your items aren't loaded yet (or your inventory is private).")
+            return
+        if not app.catalog:
+            self.status_text = "Item list still loading..."
+            return
+        self.busy = True
+        self.status_text = "Checking the latest trade ads..."
+        self.ids.matches.clear_widgets()
+        inventory, catalog, me = app.inventory, app.catalog, app.cfg.roblox_user_id
+
+        def work():
+            try:
+                found = find_matches(fetch_recent_ads(requests.Session()), inventory, catalog, rules, me=me)
+                self._checked(found, "")
+            except Exception as e:
+                log.warning("Ad match check failed: %s", e)
+                self._checked([], "Couldn't load trade ads. Check your internet and try again.")
+        threading.Thread(target=work, daemon=True).start()
+
+    @mainthread
+    def _checked(self, found, error: str):
+        app = App.get_running_app()
+        self.busy = False
+        box = self.ids.matches
+        box.clear_widgets()
+        if error:
+            self.status_text = error
+        elif found:
+            self.status_text = f"{len(found)} match{'es' if len(found) != 1 else ''} in the latest trade ads."
+        else:
+            self.status_text = "No matches in the latest trade ads. Try a lower minimum gain."
+        for match in found[:30]:
+            ad = match.ad
+            card = Factory.Card()
+            age = max(0, int((time.time() - ad.time) // 60))
+            card.add_widget(Factory.Title(text=f"{ad.name}  [size={int(sp(13))}][color={P.OK}]+{match.gain:.0f}%"
+                                               f"[/color][color={P.MUTED}]  ·  {age} min ago[/color][/size]"))
+            card.add_widget(Factory.FieldLabel(text=f"YOU GIVE  ·  {match.give_value:,}"
+                                                    + ("  ·  PICKED BY THE APP" if match.picked else "")))
+            for item_id in match.give:
+                card.add_widget(app.item_row(item_id))
+            card.add_widget(Factory.FieldLabel(text=f"YOU GET  ·  {match.get_value:,}"))
+            for item_id in ad.offer_items:
+                card.add_widget(app.item_row(item_id))
+            if ad.offer_robux:
+                card.add_widget(Factory.Txt(text=f"+ {ad.offer_robux:,} R$ (you get {int(ad.offer_robux * ROBUX_RATE):,} "
+                                                 "after Roblox's fee)"))
+            buttons = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
+            buttons.add_widget(Factory.AccentButton(text="Trade on Roblox",
+                                                    on_release=lambda *_, u=match.trade_url: droid.open_url(u)))
+            buttons.add_widget(Factory.FlatButton(text="Their profile",
+                                                  on_release=lambda *_, u=ad.user_id: app.open_player(u)))
+            card.add_widget(buttons)
+            box.add_widget(card)
+            app.request_thumbs(match.give + ad.offer_items)
+
+
 class PickerScreen(Screen):
     """Full-screen item search: tap an item to add it to the ad being edited."""
     title = StringProperty("Add item")
@@ -1958,7 +2117,7 @@ class RoliApp(App):
         self.sm = SwipeManager(transition=SlideTransition(duration=0.18))
         for screen in (HomeScreen(), EditScreen(), SettingsScreen(), HistoryScreen(), CookieScreen(),
                        TradesScreen(), TradeScreen(), ItemsScreen(), AutoScreen(), AiScreen(), HelpScreen(),
-                       PickerScreen(), MarketScreen(), ItemScreen(), PlannerScreen(), TradeLogScreen()):
+                       PickerScreen(), MarketScreen(), ItemScreen(), PlannerScreen(), TradeLogScreen(), AdAlertsScreen()):
             self.sm.add_widget(screen)
         # Before anything opens the Trades tab (e.g. a tapped notification): list or Roblox page.
         Clock.schedule_once(lambda *_: self.sync_direct_trades(), 0)

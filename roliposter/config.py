@@ -86,6 +86,21 @@ class MarketSettings:
     track_alerts: bool = True        # alerts when a tracked player posts a trade ad or their value moves
 
 
+@dataclass
+class AdAlertSettings:
+    """Trade ad alerts (Android): Rolimons trade ads you could take with your items. See roliposter.ad_match."""
+    enabled: bool = False
+    min_gain: float = 5.0          # % more value you get than you give
+    min_value: int = 0             # value you give: at least (0 = any)
+    max_value: int = 0             # value you give: at most (0 = any)
+    kind: str = "any"              # "upgrade": you get fewer items than you give; "downgrade": more
+    block_projected: bool = True   # skip offers with projected items
+    min_demand: int = -1           # every offered item at least this demand (-1 = any, 0..4)
+    tag_ads: bool = True           # also ads that ask only with tags (the app picks what you'd give)
+    never_give: list[int] = field(default_factory=list)
+
+
+AD_ALERT_KINDS = ("any", "upgrade", "downgrade")
 OPTIONAL_TABS = ("trades", "items", "market", "auto", "history")  # Ads and Settings always stay
 CHECK_SPEEDS = {2: "Fast", 5: "Normal", 15: "Battery saver"}
 MAX_TRACKED = 20  # tracked players (Market > Players > Track)  # minutes between background checks
@@ -121,6 +136,7 @@ class Config:
     ai: AiSettings = field(default_factory=AiSettings)
     social_alerts: SocialAlertSettings = field(default_factory=SocialAlertSettings)
     market: MarketSettings = field(default_factory=MarketSettings)
+    ad_alerts: AdAlertSettings = field(default_factory=AdAlertSettings)
     ads: list[Ad] = field(default_factory=list)
 
     def enabled_ads(self) -> list[Ad]:
@@ -161,6 +177,7 @@ def config_from_dict(data: dict) -> Config:
         ai = data.get("ai", {}) or {}
         sa = data.get("social_alerts", {}) or {}
         mk = data.get("market", {}) or {}
+        al = data.get("ad_alerts", {}) or {}
         return Config(
             roblox_user_id=int(data.get("roblox_user_id", 0) or 0),
             rotation=str(data.get("rotation", "sequential")).lower(),
@@ -212,6 +229,12 @@ def config_from_dict(data: dict) -> Config:
                 watchlist={int(k): float(v) for k, v in (mk.get("watchlist") or {}).items()},
                 tracked_players={int(k): str(v) for k, v in (mk.get("tracked_players") or {}).items()},
                 track_alerts=bool(mk.get("track_alerts", True))),
+            ad_alerts=AdAlertSettings(
+                enabled=bool(al.get("enabled", False)), min_gain=float(al.get("min_gain", 5.0)),
+                min_value=int(al.get("min_value", 0) or 0), max_value=int(al.get("max_value", 0) or 0),
+                kind=str(al.get("kind", "any")).lower(), block_projected=bool(al.get("block_projected", True)),
+                min_demand=int(al.get("min_demand", -1)), tag_ads=bool(al.get("tag_ads", True)),
+                never_give=[int(i) for i in al.get("never_give") or []]),
             ads=ads,
         )
     except (TypeError, ValueError, AttributeError) as e:
@@ -274,6 +297,15 @@ def validate_config(cfg: Config) -> list[str]:
         errors.append(f"You can track at most {MAX_TRACKED} players.")
     if any(not 0 < d < 100 for d in mk.watchlist.values()):
         errors.append("Watchlist: the discount must be between 1% and 99%.")
+    al = cfg.ad_alerts
+    if not -50 <= al.min_gain <= 1000:
+        errors.append("Trade ad alerts: the minimum gain must be between -50% and 1000%.")
+    if al.min_value < 0 or al.max_value < 0 or (al.max_value and al.max_value < al.min_value):
+        errors.append("Trade ad alerts: check the minimum and maximum value.")
+    if al.kind not in AD_ALERT_KINDS:
+        errors.append(f"Trade ad alerts: kind must be one of {', '.join(AD_ALERT_KINDS)}.")
+    if not -1 <= al.min_demand <= 4:
+        errors.append("Trade ad alerts: minimum demand must be between -1 and 4.")
     sa = cfg.social_alerts
     if sa.min_followers < 0:
         errors.append("Notable accounts: the minimum follower count can't be negative.")

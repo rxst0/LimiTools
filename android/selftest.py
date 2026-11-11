@@ -530,6 +530,29 @@ class SelfTest:
             app.go_back()
             app.go_back()
             yield 1
+        # Trade ad alerts: conditions save, and "check now" reads the latest Rolimons ads against your items.
+        app.show("adalerts")
+        yield 1
+        alerts = app.sm.get_screen("adalerts")
+        alerts.ids.al_gain.text = "0"
+        alerts.set_kind("any")
+        alerts.ids.al_on.active = True
+        alerts.save()
+        yield 1
+        self.dismiss_popups()
+        saved = load_config(config_path()).ad_alerts
+        self.record("trade ad alert conditions save", saved.enabled and saved.min_gain == 0, str(saved))
+        alerts.check_now()
+        ok = yield from self.wait_until(lambda: not alerts.busy, 60)
+        self.record("trade ad check runs", ok and bool(alerts.status_text) and "Couldn't" not in alerts.status_text,
+                    alerts.status_text)
+        self.shot("10b-ad-alerts")
+        alerts.ids.al_on.active = False
+        alerts.ids.al_gain.text = "5"
+        alerts.save()
+        yield 1
+        self.dismiss_popups()
+        app.go_back()
         app.switch_tab("home")
         yield 1
 

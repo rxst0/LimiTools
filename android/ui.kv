@@ -1535,6 +1535,9 @@
             Chip:
                 text: 'Planner'
                 on_release: app.show('planner')
+            Chip:
+                text: 'Ad alerts'
+                on_release: app.show('adalerts')
         BoxLayout:
             size_hint_y: None
             height: dp(64)
@@ -1768,6 +1771,124 @@
                     id: entries
                     orientation: 'vertical'
                     spacing: dp(8)
+                    size_hint_y: None
+                    height: self.minimum_height
+
+<AdAlertsScreen>:
+    name: 'adalerts'
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: BG
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        TopBar:
+            title: 'Trade ad alerts'
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: 'vertical'
+                padding: dp(14), dp(12), dp(14), dp(30)
+                spacing: dp(10)
+                size_hint_y: None
+                height: self.minimum_height
+                Card:
+                    Muted:
+                        text: 'Get notified when someone posts a Rolimons trade ad you could take with your items: they offer more value than they ask, and it meets your conditions. Tap the alert to open a trade with them on Roblox. The app never sends trades: you check and send it yourself.'
+                    SettingRow:
+                        id: al_on
+                        text: 'Notify me about matching trade ads'
+                    FieldLabel:
+                        text: 'MINIMUM GAIN FOR YOU (%)'
+                    Field:
+                        id: al_gain
+                        input_filter: 'float'
+                    FieldLabel:
+                        text: 'VALUE YOU GIVE: AT LEAST (EMPTY = ANY)'
+                    Field:
+                        id: al_min
+                        input_filter: 'int'
+                    FieldLabel:
+                        text: 'VALUE YOU GIVE: AT MOST (EMPTY = ANY)'
+                    Field:
+                        id: al_max
+                        input_filter: 'int'
+                    FieldLabel:
+                        text: 'TRADE TYPE (UPGRADE: YOU GET FEWER ITEMS; DOWNGRADE: MORE)'
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(40)
+                        spacing: dp(8)
+                        Chip:
+                            id: al_kind_any
+                            text: 'Any'
+                            on_release: root.set_kind('any')
+                        Chip:
+                            id: al_kind_upgrade
+                            text: 'Upgrade'
+                            on_release: root.set_kind('upgrade')
+                        Chip:
+                            id: al_kind_downgrade
+                            text: 'Downgrade'
+                            on_release: root.set_kind('downgrade')
+                    FieldLabel:
+                        text: 'DEMAND OF THE ITEMS YOU GET'
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(40)
+                        spacing: dp(8)
+                        Chip:
+                            id: al_demand_0
+                            text: 'Any'
+                            on_release: root.set_demand(-1)
+                        Chip:
+                            id: al_demand_2
+                            text: 'Low+'
+                            on_release: root.set_demand(1)
+                        Chip:
+                            id: al_demand_3
+                            text: 'Normal+'
+                            on_release: root.set_demand(2)
+                        Chip:
+                            id: al_demand_4
+                            text: 'High+'
+                            on_release: root.set_demand(3)
+                    SettingRow:
+                        id: al_projected
+                        text: 'Skip offers with projected items'
+                    SettingRow:
+                        id: al_tags
+                        text: 'Also ads that only ask with tags (any, upgrade, demand...): the app picks what you give'
+                    AccentButton:
+                        text: 'Save'
+                        on_release: root.save()
+                Card:
+                    Title:
+                        text: 'Never give'
+                    Muted:
+                        text: 'Ads asking for these never match, and the app never picks them.'
+                    BoxLayout:
+                        id: never_box
+                        orientation: 'vertical'
+                        spacing: dp(8)
+                        size_hint_y: None
+                        height: self.minimum_height
+                    FlatButton:
+                        text: '+  Add item'
+                        on_release: root.add_never()
+                FlatButton:
+                    text: 'Checking...' if root.busy else 'Check the latest ads now'
+                    disabled: root.busy
+                    on_release: root.check_now()
+                Muted:
+                    text: root.status_text
+                    height: self.texture_size[1] if root.status_text else 0
+                BoxLayout:
+                    id: matches
+                    orientation: 'vertical'
+                    spacing: dp(12)
                     size_hint_y: None
                     height: self.minimum_height
 

@@ -23,6 +23,8 @@ CATALOG_EVERY = 30 * 60
 DEAL_REPEAT = 24 * 3600  # the same deal notifies again after a day
 TRACK_ADS_EVERY = 5 * 60    # tracked players' new trade ads (Rolimons keeps only its latest few hundred)
 TRACK_VALUE_EVERY = 30 * 60  # tracked players' inventory value
+INVENTORY_EVERY = 10 * 60    # your own inventory, for trade ad alerts
+AD_MAX_AGE = 20 * 60         # trade ad alerts: only ads posted this recently
 TRACK_VALUE_CHANGE = 5.0     # % change that's worth an alert
 SEEN_FILE = "market_seen.json"
 MAX_ALERTS_PER_CHECK = 3
@@ -121,6 +123,7 @@ def market_loop(home, done: threading.Event) -> None:
     import requests
 
     from roliposter import market
+    from roliposter.ad_match import find_matches, match_alert
     from roliposter.inventory import fetch_inventory
     from roliposter.items import fetch_catalog
     from roliposter.portfolio import fetch_best_prices, totals
@@ -132,6 +135,7 @@ def market_loop(home, done: threading.Event) -> None:
         seen = market.Seen()
     session = requests.Session()
     catalog, catalog_at, limiteds_at, deals_at, ads_at, values_at = None, 0.0, 0.0, 0.0, 0.0, 0.0
+    inventory, inventory_at = None, 0.0
     while not done.is_set():
         cfg = load_cfg()
         now = time.time()
@@ -162,16 +166,34 @@ def market_loop(home, done: threading.Event) -> None:
                             droid.notify_url(title, text, f"https://www.roblox.com/catalog/{deal.item_id}",
                                              7000 + deal.item_id % 100000)
                 tracked = mk.tracked_players if mk.track_alerts else {}
-                if tracked and now - ads_at >= max(TRACK_ADS_EVERY, pace):
+                al = cfg.ad_alerts
+                matching = al.enabled and cfg.roblox_user_id > 0
+                # Rolimons keeps only the last few minutes of ads: trade ad alerts check at every round.
+                if (tracked or matching) and now - ads_at >= (pace if matching else max(TRACK_ADS_EVERY, pace)):
                     ads_at = now
                     if catalog is None or now - catalog_at >= CATALOG_EVERY:
                         catalog, catalog_at = fetch_catalog(session), now
+                    ads = market.fetch_recent_ads(session)
                     sent = 0
-                    for ad in market.fetch_recent_ads(session):
+                    for ad in ads:
                         if ad.user_id in tracked and seen.is_new("ads", str(ad.id)) and sent < MAX_ALERTS_PER_CHECK:
                             droid.notify_url(f"{ad.name} posted a trade ad", market.describe_ad(ad, catalog),
                                              f"https://www.rolimons.com/player/{ad.user_id}", 8000 + ad.id % 100000)
                             sent += 1
+                    if matching:
+                        # Trade ad alerts: new ads you could take with your items. You send the trade yourself.
+                        if inventory is None or now - inventory_at >= INVENTORY_EVERY:
+                            inventory, inventory_at = fetch_inventory(session, cfg.roblox_user_id), now
+                        fresh = [ad for ad in ads if now - ad.time <= AD_MAX_AGE]
+                        sent = 0
+                        if not inventory.private:
+                            for match in find_matches(fresh, inventory, catalog, al, me=cfg.roblox_user_id):
+                                if sent >= MAX_ALERTS_PER_CHECK:
+                                    break
+                                if seen.is_new("matches", str(match.ad.id)):
+                                    title, text = match_alert(match, catalog)
+                                    droid.notify_url(title, text, match.trade_url, 10000 + match.ad.id % 100000)
+                                    sent += 1
                 if tracked and now - values_at >= max(TRACK_VALUE_EVERY, 4 * pace):
                     values_at = now
                     if catalog is None or now - catalog_at >= CATALOG_EVERY:

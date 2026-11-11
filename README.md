@@ -156,6 +156,13 @@ The item page also shows the item's **intelligence** from Rolimons: a one-year c
 - **Downgrade:** pick what you give; it suggests in-demand items (no projecteds) worth that plus the extra you ask for.
 - Items you add to the other side stay fixed and the planner fills the rest. It's a planning tool: you send the trade yourself on Roblox.
 
+**Trade ad alerts** (the **Ad alerts** chip in Market) notify you when someone posts a Rolimons trade ad you could take with your items: they offer more value than they ask for, and the ad meets your conditions. Tap the alert to open a trade with them on Roblox; **the app never sends trades**, you check and send it yourself.
+- **Conditions:** minimum gain for you (%), the value you give (at least / at most), trade type (**Upgrade**: you get fewer items than you give; **Downgrade**: more), the demand of the items you get, and skipping offers with projected items.
+- Ads asking for specific items match only if you own them (copies on trade hold don't count). Ads that ask only with tags (any, upgrade, downgrade, demand...) can match too: the app then picks which of your items to offer, close to a fair trade plus your minimum gain. Ads asking for robux, rares, projecteds or wishlist items are skipped.
+- **Never give:** items you don't want to trade away. Ads asking for them never match, and the app never picks them.
+- **Check the latest ads now** shows the current matches with a **Trade on Roblox** button.
+- Rolimons only keeps the last few minutes of trade ads, so the alerts check every round of background checks: **Fast** catches the most; **Battery saver** misses some ads. Uses public data only (no Roblox sign-in), but your Rolimons sign-in on the Ads tab tells the app which items are yours. Robux in an offer count at 70% (after Roblox's fee).
+
 **Trade log** (the **Log** button in Trades) keeps your completed trades with what you gave and got, their value at the time and whether you won or lost, plus running totals. Completed trades the app shows under **Trades → Completed** are logged automatically; **Sync completed trades** reads your last 100. It needs **Read my trades directly** and a Roblox sign-in. The values are Rolimons values when the app first saw each trade.
 
 **New limited alerts** (Settings → New limiteds and watchlist) notify you about new limiteds in the Roblox catalog, with the price, number of copies, creator and description; tap to open the item on Roblox. New UGC limiteds come out many times a day, so you can limit alerts to verified creators, a maximum price and a maximum number of copies. New limited alerts and watchlist deals use public data: they don't need **Read my trades directly** or a Roblox sign-in, and they work with the app closed.
