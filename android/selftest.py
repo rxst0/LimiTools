@@ -547,6 +547,28 @@ class SelfTest:
         self.record("trade ad check runs", ok and bool(alerts.status_text) and "Couldn't" not in alerts.status_text,
                     alerts.status_text)
         self.shot("10b-ad-alerts")
+        cards = [w for w in alerts.ids.matches.children if hasattr(w, "children") and w.children]
+        if cards:
+            send = next((b for card in cards for row in card.children for b in getattr(row, "children", [])
+                         if getattr(b, "text", "") == "Send trade"), None)
+            if send is not None:
+                send.dispatch("on_release")
+                yield 1
+                notices = [w for w in Window.children if isinstance(w, ModalView)]
+                texts = " ".join(getattr(n, "message", "") + getattr(n, "title", "") for n in notices)
+                self.record("send trade asks first", bool(notices) and ("Send this trade?" in texts
+                                                                          or "Read my trades directly" in texts),
+                            texts[:120])
+                self.shot("10c-send-confirm")
+                self.dismiss_popups()
+        alerts.ids.al_auto.active = True
+        alerts.save()
+        yield 1
+        notices = [w for w in Window.children if isinstance(w, ModalView)]
+        self.record("auto-send needs reading trades directly", app.cfg.ad_alerts.auto_send is False or
+                    app.cfg.app.direct_trades, " ".join(getattr(n, "message", "")[:60] for n in notices))
+        self.dismiss_popups()
+        alerts.ids.al_auto.active = False
         alerts.ids.al_on.active = False
         alerts.ids.al_gain.text = "5"
         alerts.save()

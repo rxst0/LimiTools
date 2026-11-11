@@ -1796,7 +1796,7 @@
                 height: self.minimum_height
                 Card:
                     Muted:
-                        text: 'Get notified when someone posts a Rolimons trade ad you could take with your items: they offer more value than they ask, and it meets your conditions. Tap the alert to open a trade with them on Roblox. The app never sends trades: you check and send it yourself.'
+                        text: 'Get notified when someone posts a Rolimons trade ad you could take with your items: they offer more value than they ask, and it meets your conditions. Tap the alert to see the trade and send it (you confirm every trade), or turn on auto-send below.'
                     SettingRow:
                         id: al_on
                         text: 'Notify me about matching trade ads'
@@ -1866,6 +1866,33 @@
                         on_release: root.save()
                 Card:
                     Title:
+                        text: 'Auto-send'
+                    Muted:
+                        text: 'Sends matching trades by itself, for fresh ads only, at most once per player a day. Needs "Read my trades directly" and a Roblox sign-in. Roblox does not allow automating your account: use at your own risk, and try test mode first.'
+                    SettingRow:
+                        id: al_auto
+                        text: 'Auto-send matching trades'
+                    BoxLayout:
+                        size_hint_y: None
+                        height: dp(40)
+                        spacing: dp(8)
+                        Chip:
+                            id: al_mode_test
+                            text: 'Test mode'
+                            on_release: root.set_auto_mode('test')
+                        Chip:
+                            id: al_mode_live
+                            text: 'Live'
+                            on_release: root.set_auto_mode('live')
+                    FieldLabel:
+                        text: 'AT MOST THIS MANY TRADES A DAY (1-20)'
+                    Field:
+                        id: al_max_sends
+                        input_filter: 'int'
+                    Muted:
+                        text: 'Uses the conditions above (minimum gain, projected items, demand, never give...). Tap Save above to apply.'
+                Card:
+                    Title:
                         text: 'Never give'
                     Muted:
                         text: 'Ads asking for these never match, and the app never picks them.'
@@ -1878,6 +1905,16 @@
                     FlatButton:
                         text: '+  Add item'
                         on_release: root.add_never()
+                Title:
+                    text: 'Recent alerts'
+                BoxLayout:
+                    id: recent
+                    orientation: 'vertical'
+                    spacing: dp(12)
+                    size_hint_y: None
+                    height: self.minimum_height
+                Title:
+                    text: 'Right now'
                 FlatButton:
                     text: 'Checking...' if root.busy else 'Check the latest ads now'
                     disabled: root.busy

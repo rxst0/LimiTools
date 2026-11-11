@@ -16,7 +16,8 @@ import java.util.regex.Pattern;
 /**
  * Roblox requests made with the stored sign-in (see RobloxSession). Reads are a fixed set of GET requests
  * (fetch): there is no way to ask for any other URL, method or body. The one exception is accept(), used
- * only by AutoAccept in live mode; nothing here can decline, counter or send a trade, or touch anything
+ * only by AutoAccept in live mode; nothing here can decline, counter or send a trade (sending is
+ * TradeSender, after the user confirmed or with live auto-send), or touch anything
  * else on the account.
  *
  * fetch() returns {"status": <HTTP status>, "body": "<reply text>"}; status is 0 when there's no stored

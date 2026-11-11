@@ -66,3 +66,19 @@ def test_settings_validation():
     cfg.ad_alerts.max_value, cfg.ad_alerts.min_value = 10, 20
     errors = " ".join(validate_config(cfg))
     assert "kind must be" in errors and "minimum and maximum value" in errors
+
+
+def test_match_log_round_trip_and_auto_send_limits(tmp_path):
+    from roliposter.ad_match import MatchLog, match_from_dict
+    log = MatchLog(tmp_path / "m.json")
+    m1 = match_ad(ad([1], request=[2], ad_id=1), INV, CATALOG, AdAlertSettings())
+    m2 = match_ad(ad([1], request=[3], user=60, ad_id=2), INV, CATALOG, AdAlertSettings())
+    log.add(m1, now=1000)
+    log.mark(m1, "sent", "Trade sent.", 555, auto=True, now=1000)
+    log.mark(m2, "would_send", auto=True, now=1000)
+    log.save()
+    again = MatchLog(tmp_path / "m.json")
+    assert [e["status"] for e in again.entries] == ["would_send", "sent"]
+    assert match_from_dict(again.entries[1]["match"]).give == [2] and again.entries[1]["trade_id"] == 555
+    assert again.auto_sends_today(now=2000) == 1 and again.auto_sends_today(now=1000 + 86400) == 0
+    assert again.sent_to_recently(50, now=2000) and not again.sent_to_recently(60, now=2000)

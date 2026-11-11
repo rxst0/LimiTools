@@ -24,7 +24,9 @@ DEAL_REPEAT = 24 * 3600  # the same deal notifies again after a day
 TRACK_ADS_EVERY = 5 * 60    # tracked players' new trade ads (Rolimons keeps only its latest few hundred)
 TRACK_VALUE_EVERY = 30 * 60  # tracked players' inventory value
 INVENTORY_EVERY = 10 * 60    # your own inventory, for trade ad alerts
+MATCHES_FILE = "ad_matches.json"
 AD_MAX_AGE = 20 * 60         # trade ad alerts: only ads posted this recently
+AUTO_SEND_MAX_AGE = 10 * 60  # auto-send: only ads this fresh (older ones are likely taken)
 TRACK_VALUE_CHANGE = 5.0     # % change that's worth an alert
 SEEN_FILE = "market_seen.json"
 MAX_ALERTS_PER_CHECK = 3
@@ -123,7 +125,7 @@ def market_loop(home, done: threading.Event) -> None:
     import requests
 
     from roliposter import market
-    from roliposter.ad_match import find_matches, match_alert
+    from roliposter.ad_match import MatchLog, find_matches, match_alert
     from roliposter.inventory import fetch_inventory
     from roliposter.items import fetch_catalog
     from roliposter.portfolio import fetch_best_prices, totals
@@ -187,13 +189,12 @@ def market_loop(home, done: threading.Event) -> None:
                         fresh = [ad for ad in ads if now - ad.time <= AD_MAX_AGE]
                         sent = 0
                         if not inventory.private:
-                            for match in find_matches(fresh, inventory, catalog, al, me=cfg.roblox_user_id):
-                                if sent >= MAX_ALERTS_PER_CHECK:
-                                    break
-                                if seen.is_new("matches", str(match.ad.id)):
-                                    title, text = match_alert(match, catalog)
-                                    droid.notify_url(title, text, match.trade_url, 10000 + match.ad.id % 100000)
-                                    sent += 1
+                            matches = [m for m in find_matches(fresh, inventory, catalog, al, me=cfg.roblox_user_id)
+                                       if seen.is_new("matches", str(m.ad.id))]
+                            if matches:
+                                handle_matches(home, cfg, matches[:MAX_ALERTS_PER_CHECK], catalog, MatchLog,
+                                               match_alert)
+                                inventory = None  # re-read your items next round (a trade may have gone out)
                 if tracked and now - values_at >= max(TRACK_VALUE_EVERY, 4 * pace):
                     values_at = now
                     if catalog is None or now - catalog_at >= CATALOG_EVERY:
@@ -215,6 +216,37 @@ def market_loop(home, done: threading.Event) -> None:
             except Exception as e:  # network trouble etc.: try again next round
                 droid.log.debug("Market check failed: %s", e)
         done.wait(30)
+
+
+def handle_matches(home, cfg, matches, catalog, MatchLog, match_alert) -> None:
+    """New trade ad matches: logged for Market > Ad alerts (with a Send button there), then auto-sent if
+    that's on and allowed, else a notification that opens the app on them."""
+    al = cfg.ad_alerts
+    match_log = MatchLog(home / MATCHES_FILE)
+    can_send = al.auto_send and cfg.app.direct_trades and droid.RobloxDirect.signed_in()
+    for match in matches:
+        match_log.add(match)
+        title, text = match_alert(match, catalog)
+        note_id = 10000 + match.ad.id % 100000
+        if can_send and time.time() - match.ad.time <= AUTO_SEND_MAX_AGE \
+                and not match_log.sent_to_recently(match.ad.user_id):
+            if al.auto_mode != "live":
+                match_log.mark(match, "would_send", "Test mode: auto-send would have sent this trade.", auto=True)
+                droid.notify(f"Would auto-send (test mode): {title}", text, note_id, droid.CHANNEL_MARKET,
+                             tab="adalerts")
+                continue
+            if match_log.auto_sends_today() < al.max_sends_per_day:
+                status, trade_id, message = droid.send_trade(match.ad.user_id, match.give, match.ad.offer_items,
+                                                             match.ad.offer_robux)
+                ok = status == 200
+                match_log.mark(match, "sent" if ok else "failed", message, trade_id, auto=True)
+                droid.notify(("Auto-sent a trade: " if ok else "Auto-send failed: ") + title,
+                             text if ok else message, note_id, droid.CHANNEL_MARKET, tab="adalerts")
+                continue
+        droid.notify(title, text.replace("Tap to open a trade with them; you send it yourself.",
+                                         "Tap to see it and send the trade."),
+                     note_id, droid.CHANNEL_MARKET, tab="adalerts")
+    match_log.save()
 
 
 def notify_event(event: dict) -> None:

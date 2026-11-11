@@ -98,9 +98,13 @@ class AdAlertSettings:
     min_demand: int = -1           # every offered item at least this demand (-1 = any, 0..4)
     tag_ads: bool = True           # also ads that ask only with tags (the app picks what you'd give)
     never_give: list[int] = field(default_factory=list)
+    auto_send: bool = False        # send matching trades by itself (needs "Read my trades directly")
+    auto_mode: str = "test"        # "test": only says what it would send; "live": sends
+    max_sends_per_day: int = 5     # auto-send cap (1-20); one trade per player a day at most
 
 
 AD_ALERT_KINDS = ("any", "upgrade", "downgrade")
+MAX_AUTO_SENDS = 20  # trades a day auto-send may send, at most
 OPTIONAL_TABS = ("trades", "items", "market", "auto", "history")  # Ads and Settings always stay
 CHECK_SPEEDS = {2: "Fast", 5: "Normal", 15: "Battery saver"}
 MAX_TRACKED = 20  # tracked players (Market > Players > Track)  # minutes between background checks
@@ -234,7 +238,9 @@ def config_from_dict(data: dict) -> Config:
                 min_value=int(al.get("min_value", 0) or 0), max_value=int(al.get("max_value", 0) or 0),
                 kind=str(al.get("kind", "any")).lower(), block_projected=bool(al.get("block_projected", True)),
                 min_demand=int(al.get("min_demand", -1)), tag_ads=bool(al.get("tag_ads", True)),
-                never_give=[int(i) for i in al.get("never_give") or []]),
+                never_give=[int(i) for i in al.get("never_give") or []],
+                auto_send=bool(al.get("auto_send", False)), auto_mode=str(al.get("auto_mode", "test")).lower(),
+                max_sends_per_day=int(al.get("max_sends_per_day", 5))),
             ads=ads,
         )
     except (TypeError, ValueError, AttributeError) as e:
@@ -306,6 +312,10 @@ def validate_config(cfg: Config) -> list[str]:
         errors.append(f"Trade ad alerts: kind must be one of {', '.join(AD_ALERT_KINDS)}.")
     if not -1 <= al.min_demand <= 4:
         errors.append("Trade ad alerts: minimum demand must be between -1 and 4.")
+    if al.auto_mode not in ("test", "live"):
+        errors.append('Trade ad alerts: auto-send mode must be "test" or "live".')
+    if not 1 <= al.max_sends_per_day <= MAX_AUTO_SENDS:
+        errors.append(f"Trade ad alerts: auto-send at most 1 to {MAX_AUTO_SENDS} trades a day.")
     sa = cfg.social_alerts
     if sa.min_followers < 0:
         errors.append("Notable accounts: the minimum follower count can't be negative.")

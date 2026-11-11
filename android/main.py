@@ -54,7 +54,7 @@ from roliposter.roblox_trades import (KINDS, KIND_LABELS, ago, parse_details, pa
 from roliposter.portfolio import (RANGES, PriceLog, fetch_best_prices, fetch_history,  # noqa: E402
                                   realistic_price, totals)
 from roliposter.ai_advisor import PROVIDERS, Advice, AdvisorError, ask, build_context, check  # noqa: E402
-from roliposter.ad_match import ROBUX_RATE, find_matches  # noqa: E402
+from roliposter.ad_match import ROBUX_RATE, MatchLog, find_matches, match_from_dict  # noqa: E402
 from roliposter.item_intel import fetch_item_intel  # noqa: E402
 from roliposter.trade_log import TradeLog  # noqa: E402
 from roliposter.trade_planner import plan_downgrade, plan_upgrade  # noqa: E402
@@ -88,7 +88,7 @@ The Trades tab shows Roblox's trades page. Sign in to Roblox there the first tim
 The Items tab shows the limiteds in your Rolimons inventory, their total value and RAP (robux), and a chart of your value over the last day, month, 6 months or year (from your Rolimons player page). When you make an ad, "Add item you offer" lists only items you own.
 
 [b]Read my trades directly (optional)[/b]
-Turn this on in Settings to see your trades as a list in the app (received, sent, completed, inactive) with item pictures and Rolimons values, sorted newest first or by best or worst deal, and to get alerts for new and accepted trades even when the app is closed. To do this, the app keeps an encrypted copy of your Roblox sign-in (.ROBLOSECURITY) on this phone and uses it only to read your trades. It's never sent anywhere except Roblox. It can't be used to decline or send trades, and it only accepts trades if you turn on live auto-accept. Turning the option off deletes the copy.
+Turn this on in Settings to see your trades as a list in the app (received, sent, completed, inactive) with item pictures and Rolimons values, sorted newest first or by best or worst deal, and to get alerts for new and accepted trades even when the app is closed. To do this, the app keeps an encrypted copy of your Roblox sign-in (.ROBLOSECURITY) on this phone and uses it only for your trades. It's never sent anywhere except Roblox. It never declines or counters trades; it sends one only when you tap Send on a trade ad match and confirm (or with live auto-send on), and accepts trades only with live auto-accept on. Turning the option off deletes the copy.
 
 [b]Market[/b]
 Items: search any limited, open it for its value, RAP, demand, trend and current price, and tap Watch to get an alert when someone lists it under value. Players: look up any username to see their value, chart and items. The Richest, Traders and Verified lists help you find people; Track someone to get alerts when they post a trade ad or their value changes. Following or friending them is up to you, on their profile.
@@ -121,7 +121,7 @@ You get a notification when posting pauses (daily ad limit, outside your posting
 Every post, pause and problem in plain English. Use Problems to see only what went wrong, and tap an entry to see what to do about it.
 
 [b]Safety[/b]
-This app never asks you to type or paste your Roblox password or .ROBLOSECURITY cookie. Anyone who asks you to paste those is trying to steal your account. Your Roblox sign-in is only read if you turn on "Read my trades directly", and then only to read your trades.
+This app never asks you to type or paste your Roblox password or .ROBLOSECURITY cookie. Anyone who asks you to paste those is trying to steal your account. Your Roblox sign-in is only read if you turn on "Read my trades directly", and then only for your trades.
 
 Run posting on one device at a time: two devices posting for the same account hit each other's cooldown.
 
@@ -139,7 +139,8 @@ LIVE_AUTO_ACCEPT_TEXT = ("The app will accept new received trades on Roblox, by 
                          "notification.")
 DIRECT_TRADES_TEXT = ("Your trades now show as a list in the Trades tab, and new-trade alerts work with the app "
                       "closed.\n\nThe app keeps an encrypted copy of your Roblox sign-in on this phone and uses it "
-                      "only to read your trades. Turn this off any time to delete the copy.\n\n"
+                      "only for your trades: reading them, sending one when you tap Send (Market > Ad alerts), and auto-accept "
+                      "or auto-send if you turn them on. Turn this off any time to delete the copy.\n\n"
                       "If you aren't signed in to Roblox yet, open the Trades tab and sign in there.")
 
 
@@ -1679,10 +1680,11 @@ class TradeLogScreen(Screen):
 
 
 class AdAlertsScreen(Screen):
-    """Trade ad alerts: notifies you about new Rolimons trade ads you could take with your items, by your
-    conditions. Tapping one opens a Roblox trade with that player; you send it yourself."""
+    """Trade ad alerts: Rolimons trade ads you could take with your items, by your conditions. Send one from
+    here (after confirming), or let auto-send do it (test mode first)."""
     status_text = StringProperty("")
     busy = BooleanProperty(False)
+    sending = BooleanProperty(False)
     DEMAND_CHOICES = ((-1, "Any"), (1, "Low+"), (2, "Normal+"), (3, "High+"))
 
     def on_pre_enter(self):
@@ -1691,10 +1693,13 @@ class AdAlertsScreen(Screen):
         ids.al_on.active, ids.al_projected.active, ids.al_tags.active = al.enabled, al.block_projected, al.tag_ads
         ids.al_gain.text = f"{al.min_gain:g}"
         ids.al_min.text, ids.al_max.text = str(al.min_value or ""), str(al.max_value or "")
+        ids.al_auto.active, ids.al_max_sends.text = al.auto_send, str(al.max_sends_per_day)
         self.never_give = list(al.never_give)
         self.set_kind(al.kind)
         self.set_demand(al.min_demand)
+        self.set_auto_mode(al.auto_mode)
         self.refresh_never()
+        self.refresh_recent()
 
     def set_kind(self, kind: str):
         self._kind = kind if kind in AD_ALERT_KINDS else "any"
@@ -1706,6 +1711,12 @@ class AdAlertsScreen(Screen):
         for value, _label in self.DEMAND_CHOICES:
             self.ids[f"al_demand_{value + 1}"].selected = value == self._demand
 
+    def set_auto_mode(self, mode: str):
+        self._auto_mode = mode if mode in ("test", "live") else "test"
+        self.ids.al_mode_test.selected = self._auto_mode == "test"
+        self.ids.al_mode_live.selected = self._auto_mode == "live"
+
+    # ---- never give ----------------------------------------------------------------------------
     def refresh_never(self):
         app = App.get_running_app()
         box = self.ids.never_box
@@ -1715,7 +1726,7 @@ class AdAlertsScreen(Screen):
             row.add_action("×", lambda n=i: self.remove_never(n))
             box.add_widget(row)
         if not self.never_give:
-            box.add_widget(Factory.Muted(text="None: any of your items can be suggested."))
+            box.add_widget(Factory.Muted(text="None: any of your items can be used."))
         app.request_thumbs(self.never_give)
 
     def add_never(self):
@@ -1735,6 +1746,7 @@ class AdAlertsScreen(Screen):
         self.never_give.pop(index)
         self.refresh_never()
 
+    # ---- settings ------------------------------------------------------------------------------
     def _rules(self):
         """The conditions on screen, or None (after telling you) if a number is wrong."""
         app = App.get_running_app()
@@ -1742,14 +1754,16 @@ class AdAlertsScreen(Screen):
         try:
             gain = float(ids.al_gain.text or 0)
             low, high = int(ids.al_min.text or 0), int(ids.al_max.text or 0)
+            max_sends = int(ids.al_max_sends.text or 0)
         except ValueError:
             app.notice("Trade ad alerts", "Please enter numbers only.")
             return None
         return AdAlertSettings(enabled=ids.al_on.active, min_gain=gain, min_value=low, max_value=high,
                                kind=self._kind, block_projected=ids.al_projected.active, min_demand=self._demand,
-                               tag_ads=ids.al_tags.active, never_give=list(self.never_give))
+                               tag_ads=ids.al_tags.active, never_give=list(self.never_give),
+                               auto_send=ids.al_auto.active, auto_mode=self._auto_mode, max_sends_per_day=max_sends)
 
-    def save(self):
+    def save(self, confirmed: bool = False):
         app = App.get_running_app()
         rules = self._rules()
         if rules is None:
@@ -1759,6 +1773,16 @@ class AdAlertsScreen(Screen):
         problems = [e for e in validate_config(c) if e.startswith("Trade ad alerts")]
         if problems:
             return app.notice("Trade ad alerts", "\n".join(problems))
+        if rules.auto_send and not (c.app.direct_trades and droid.RobloxDirect.signed_in()):
+            return app.notice("Auto-send", 'Auto-send needs "Read my trades directly" (Settings) and a Roblox '
+                                           "sign-in (Trades tab).")
+        if rules.auto_send and not rules.enabled:
+            return app.notice("Auto-send", "Turn on the trade ad alerts too: auto-send works on their matches.")
+        going_live = rules.auto_send and rules.auto_mode == "live" and not (
+            app.cfg.ad_alerts.auto_send and app.cfg.ad_alerts.auto_mode == "live")
+        if going_live and not confirmed:
+            return app.notice("Turn on live auto-send?", AUTO_SEND_TEXT.format(n=rules.max_sends_per_day),
+                              buttons=(("Cancel", None), ("Turn on", lambda: self.save(confirmed=True))))
         app.cfg = c
         app.persist()
         app.apply_trade_notifications()  # starts the background checks if they're needed
@@ -1770,6 +1794,17 @@ class AdAlertsScreen(Screen):
                 return app.notice("Trade ad alerts", "Saved, but notifications are off in Settings.")
             droid.request_notification_permission()
         app.toast("Saved")
+
+    # ---- matches -------------------------------------------------------------------------------
+    def refresh_recent(self):
+        """Recent alerts from the background checks, and what happened to them."""
+        box = self.ids.recent
+        box.clear_widgets()
+        entries = MatchLog(HOME / MATCHES_FILE).entries
+        if not entries:
+            box.add_widget(Factory.Muted(text="No alerts yet. Matches from the background checks show up here."))
+        for entry in entries[:15]:
+            box.add_widget(self._card(match_from_dict(entry["match"]), entry))
 
     def check_now(self):
         """Matches among the trade ads on Rolimons right now, with these conditions (saved or not)."""
@@ -1800,7 +1835,6 @@ class AdAlertsScreen(Screen):
 
     @mainthread
     def _checked(self, found, error: str):
-        app = App.get_running_app()
         self.busy = False
         box = self.ids.matches
         box.clear_widgets()
@@ -1811,29 +1845,100 @@ class AdAlertsScreen(Screen):
         else:
             self.status_text = "No matches in the latest trade ads. Try a lower minimum gain."
         for match in found[:30]:
-            ad = match.ad
-            card = Factory.Card()
-            age = max(0, int((time.time() - ad.time) // 60))
-            card.add_widget(Factory.Title(text=f"{ad.name}  [size={int(sp(13))}][color={P.OK}]+{match.gain:.0f}%"
-                                               f"[/color][color={P.MUTED}]  ·  {age} min ago[/color][/size]"))
-            card.add_widget(Factory.FieldLabel(text=f"YOU GIVE  ·  {match.give_value:,}"
-                                                    + ("  ·  PICKED BY THE APP" if match.picked else "")))
-            for item_id in match.give:
-                card.add_widget(app.item_row(item_id))
-            card.add_widget(Factory.FieldLabel(text=f"YOU GET  ·  {match.get_value:,}"))
-            for item_id in ad.offer_items:
-                card.add_widget(app.item_row(item_id))
-            if ad.offer_robux:
-                card.add_widget(Factory.Txt(text=f"+ {ad.offer_robux:,} R$ (you get {int(ad.offer_robux * ROBUX_RATE):,} "
-                                                 "after Roblox's fee)"))
-            buttons = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
-            buttons.add_widget(Factory.AccentButton(text="Trade on Roblox",
-                                                    on_release=lambda *_, u=match.trade_url: droid.open_url(u)))
-            buttons.add_widget(Factory.FlatButton(text="Their profile",
-                                                  on_release=lambda *_, u=ad.user_id: app.open_player(u)))
-            card.add_widget(buttons)
-            box.add_widget(card)
-            app.request_thumbs(match.give + ad.offer_items)
+            box.add_widget(self._card(match))
+
+    def _card(self, match, entry: dict | None = None):
+        app = App.get_running_app()
+        ad = match.ad
+        card = Factory.Card()
+        age = ago(ad.time) or "just now"
+        card.add_widget(Factory.Title(text=f"{ad.name}  [size={int(sp(13))}][color={P.OK}]+{match.gain:.0f}%"
+                                           f"[/color][color={P.MUTED}]  ·  ad {age}[/color][/size]"))
+        status = (entry or {}).get("status")
+        if status in MATCH_STATUS:
+            tone, label = MATCH_STATUS[status]
+            line = label + (" by auto-send" if entry.get("auto") and status in ("sent", "failed") else "")
+            if entry.get("message") and status == "failed":
+                line += f": {entry['message']}"
+            card.add_widget(Factory.Txt(text=f"[color={tone}]{line}[/color]", font_size=sp(14)))
+        card.add_widget(Factory.FieldLabel(text=f"YOU GIVE  ·  {match.give_value:,}"
+                                                + ("  ·  PICKED BY THE APP" if match.picked else "")))
+        for item_id in match.give:
+            card.add_widget(app.item_row(item_id))
+        card.add_widget(Factory.FieldLabel(text=f"YOU GET  ·  {match.get_value:,}"))
+        for item_id in ad.offer_items:
+            card.add_widget(app.item_row(item_id))
+        if ad.offer_robux:
+            card.add_widget(Factory.Txt(text=f"+ {ad.offer_robux:,} R$ (you get {int(ad.offer_robux * ROBUX_RATE):,} "
+                                             "after Roblox's fee)"))
+        buttons = BoxLayout(size_hint_y=None, height=dp(46), spacing=dp(8))
+        if status != "sent":
+            buttons.add_widget(Factory.AccentButton(text="Send trade", on_release=lambda *_: self.confirm(match)))
+        buttons.add_widget(Factory.FlatButton(text="Profile", on_release=lambda *_, u=ad.user_id: app.open_player(u)))
+        card.add_widget(buttons)
+        app.request_thumbs(match.give + ad.offer_items)
+        return card
+
+    def confirm(self, match):
+        """Shows exactly what the trade is; sends only if you tap Send."""
+        app = App.get_running_app()
+        if self.sending:
+            return
+        if not (app.cfg.app.direct_trades and droid.RobloxDirect.signed_in()):
+            return app.notice("Send trade", 'Sending from the app needs "Read my trades directly" (Settings) and '
+                                            "a Roblox sign-in (Trades tab). You can still send it on Roblox.",
+                              buttons=(("Cancel", None),
+                                       ("Open on Roblox", lambda: droid.open_url(match.trade_url))))
+
+        def names(ids):
+            return "\n".join(f"  • {app.catalog.get(i).label if app.catalog and app.catalog.get(i) else i}"
+                             for i in ids)
+        ad = match.ad
+        robux = f"\n  • {ad.offer_robux:,} R$" if ad.offer_robux else ""
+        text = (f"To {ad.name}\n\nYou give ({match.give_value:,}):\n{names(match.give)}\n\n"
+                f"You get ({match.get_value:,}, +{match.gain:.0f}%):\n{names(ad.offer_items)}{robux}\n\n"
+                "They can accept, decline or counter it on Roblox.")
+        app.notice("Send this trade?", text, buttons=(("Cancel", None), ("Send", lambda: self._send(match))))
+
+    def _send(self, match):
+        self.sending = True
+        App.get_running_app().toast("Sending...")
+
+        def work():
+            try:
+                result = droid.send_trade(match.ad.user_id, match.give, match.ad.offer_items, match.ad.offer_robux)
+            except Exception as e:
+                log.warning("Sending a trade failed: %s", e)
+                result = (-1, 0, "Something went wrong sending the trade. Try again.")
+            self._sent(match, *result)
+        threading.Thread(target=work, daemon=True).start()
+
+    @mainthread
+    def _sent(self, match, status: int, trade_id: int, message: str):
+        app = App.get_running_app()
+        self.sending = False
+        match_log = MatchLog(HOME / MATCHES_FILE)
+        match_log.mark(match, "sent" if status == 200 else "failed", message, trade_id)
+        match_log.save()
+        self.refresh_recent()
+        if status == 200:
+            app.notice("Trade sent", f"Sent to {match.ad.name}. You'll see it under Trades > Outbound.")
+        elif status == -3:
+            app.notice("Verify on Roblox", message, buttons=(("Cancel", None),
+                                                             ("Open on Roblox", lambda: droid.open_url(match.trade_url))))
+        else:
+            app.notice("Trade not sent", message or "Roblox didn't accept the trade.")
+
+
+MATCHES_FILE = "ad_matches.json"  # shared with the background service (android/service.py)
+MATCH_STATUS = {"sent": (P.OK, "Trade sent"), "failed": (P.BAD, "Not sent"),
+                "would_send": (P.WARN, "Auto-send would send this (test mode)")}
+AUTO_SEND_TEXT = ("Auto-send will send trades from your Roblox account by itself: for new trade ads that match "
+                  "your conditions, at most {n} a day and one per player a day.\n\n"
+                  "- Roblox's rules don't allow automating your account; accounts that send trades "
+                  "automatically can be restricted or banned. Use this at your own risk.\n"
+                  "- Test mode shows what it would send without sending anything.\n"
+                  "- If Roblox asks for 2-step verification, the trade isn't sent and you get a notification.")
 
 
 class PickerScreen(Screen):
@@ -2346,6 +2451,10 @@ class RoliApp(App):
             Clock.schedule_once(lambda *_: self.open_tab_from_notification(tab, kind), 0)
 
     def open_tab_from_notification(self, tab: str, kind: str = "inbound"):
+        if tab == "adalerts":  # a trade ad alert: its match, with a Send button
+            self.switch_tab("market")
+            self.show("adalerts")
+            return
         if tab == "trades":  # a trade alert: show the trades list (not the Roblox page) it's about
             self.sync_direct_trades()
             trades = self.sm.get_screen("trades")

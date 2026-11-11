@@ -5,7 +5,10 @@ offer passes your other conditions. Ads that ask for specific items match only i
 trade hold don't count). Ads that ask only with tags ("any", "upgrade", "downgrade", ...) can match too: the
 app then picks which of your items to give. Either way it only notifies you: you send the trade yourself.
 """
-from dataclasses import dataclass
+import json
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from .config import AdAlertSettings
 from .inventory import Inventory
@@ -139,3 +142,69 @@ def match_alert(match: AdMatch, catalog: ItemCatalog) -> tuple[str, str]:
             + (", picked by the app from your items" if match.picked else "")
             + ". Tap to open a trade with them; you send it yourself.")
     return title, text
+
+
+# ---- recent matches and sent trades -------------------------------------------------------------------
+LOG_SIZE = 40
+DAY = 86400
+
+
+def match_to_dict(match: AdMatch) -> dict:
+    return {"ad": asdict(match.ad), "give": match.give, "give_value": match.give_value,
+            "get_value": match.get_value, "picked": match.picked}
+
+
+def match_from_dict(row: dict) -> AdMatch:
+    return AdMatch(TradeAd(**row["ad"]), [int(i) for i in row["give"]], int(row["give_value"]),
+                   int(row["get_value"]), bool(row.get("picked")))
+
+
+class MatchLog:
+    """Recent trade ad matches (newest first) and what happened: alerted, sent (by you or auto-send), failed.
+    Written by the background service and the app; a JSON file, replaced atomically."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.entries: list[dict] = []
+        self.load()
+
+    def load(self) -> None:
+        try:
+            self.entries = list(json.loads(self.path.read_text(encoding="utf-8")).get("entries", []))
+        except (OSError, ValueError, AttributeError):
+            self.entries = []
+
+    def save(self) -> None:
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"entries": self.entries[:LOG_SIZE]}), encoding="utf-8")
+        tmp.replace(self.path)
+
+    def find(self, ad_id: int) -> dict | None:
+        return next((e for e in self.entries if e["match"]["ad"]["id"] == ad_id), None)
+
+    def add(self, match: AdMatch, now: float | None = None) -> dict:
+        entry = self.find(match.ad.id)
+        if entry is None:
+            entry = {"match": match_to_dict(match), "time": time.time() if now is None else now,
+                     "status": "alerted", "message": "", "trade_id": 0, "auto": False}
+            self.entries.insert(0, entry)
+            del self.entries[LOG_SIZE:]
+        return entry
+
+    def mark(self, match: AdMatch, status: str, message: str = "", trade_id: int = 0, auto: bool = False,
+             now: float | None = None) -> None:
+        """status: "sent", "failed" or "would_send" (auto-send test mode)."""
+        entry = self.add(match, now)
+        entry.update(status=status, message=message, trade_id=int(trade_id or 0), auto=auto,
+                     sent_at=time.time() if now is None else now)
+
+    def auto_sends_today(self, now: float | None = None) -> int:
+        now = time.time() if now is None else now
+        return sum(1 for e in self.entries if e.get("auto") and e["status"] == "sent"
+                   and now - e.get("sent_at", 0) < DAY)
+
+    def sent_to_recently(self, user_id: int, now: float | None = None) -> bool:
+        """A trade (sent, or tried) to this player in the last day: auto-send leaves them alone."""
+        now = time.time() if now is None else now
+        return any(e["match"]["ad"]["user_id"] == user_id and e["status"] in ("sent", "failed")
+                   and now - e.get("sent_at", 0) < DAY for e in self.entries)

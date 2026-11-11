@@ -5,9 +5,10 @@ Fully open source, with no servers involved: everything runs on your own device.
 
 > **Unofficial.** LimiTools isn't made by, affiliated with or endorsed by Rolimons or Roblox. It was called *Rolimons Ad Poster* before version 1.8.0.
 
-> **Trades are view-only unless you turn on auto-accept:** it posts Rolimons trade ads and can *show* your
-> Roblox trades. It never declines, counters or sends Roblox trades. It only accepts one if you turn on
-> [auto-accept](#auto-accept-android) in live mode and the trade passes your rules. It never asks you to
+> **Trades change only when you say so:** it posts Rolimons trade ads and can *show* your Roblox trades.
+> It never declines or counters Roblox trades. It sends a trade only when you tap **Send** on a
+> [trade ad match](#market-item-browser-player-lookup-new-limiteds-and-deals-android) and confirm it, or with
+> live auto-send on; it accepts one only with [auto-accept](#auto-accept-android) in live mode. It never asks you to
 > type or paste your Roblox password or `.ROBLOSECURITY` cookie. If any tool asks you to paste those, it's a scam.
 > On Android, the optional **Read my trades directly** setting keeps an encrypted copy of your Roblox sign-in
 > on your phone so the app can read your trades ([details below](#reading-your-trades-directly-android)).
@@ -126,14 +127,17 @@ How it works, and what changes:
   copies your `.ROBLOSECURITY` cookie and stores it encrypted with an Android Keystore key, which never
   leaves the phone. The background service runs in a separate process that can't see the page's
   sign-in, so it needs this copy.
-- **It's used to read trades** (and, only if you turn on live auto-accept, to accept the ones that pass your
-  rules). The Java code that holds the cookie sends a fixed list of read-only requests:
+- **It's used for your trades:** reading them; accepting the ones that pass your rules if you turn on live
+  auto-accept; and sending a trade when you tap **Send** on a trade ad match and confirm, or with live auto-send. The Java code that holds the cookie sends a fixed list of read-only requests:
   `GET trades.roblox.com/v1/trades/{inbound|outbound|completed|inactive}` and
   `GET trades.roblox.com/v2/trades/{id}`, and for notable-account alerts `GET friends.roblox.com/v1/my/friends/requests`,
   `GET friends.roblox.com/v1/users/{id}/followers`, `GET friends.roblox.com/v1/users/{id}/followers/count` and
-  `GET users.roblox.com/v1/users/{id}`. The one other request is `POST trades.roblox.com/v1/trades/{id}/accept`,
-  which only the auto-accept code makes, in live mode, after a trade passed your rules. No code in the app
-  declines, counters or sends a trade, or changes anything else on your account. The cookie is only used by
+  `GET users.roblox.com/v1/users/{id}`. Accepting is `POST trades.roblox.com/v1/trades/{id}/accept`, made only
+  by the auto-accept code, in live mode, after a trade passed your rules. Sending a trade (`TradeSender`) reads
+  `GET users.roblox.com/v1/users/authenticated`, `GET trades.roblox.com/v2/users/{id}/can-trade-with` and
+  `GET trades.roblox.com/v2/users/{id}/tradableItems` (to find the exact copies), then makes
+  `POST trades.roblox.com/v2/trades/send`, never offering Robux. No code in the app declines or counters a
+  trade, or changes anything else on your account. The cookie is only used by
   that Java code (the app's Python side never asks for it), isn't logged, and is only sent to Roblox. (For the gain/loss in alerts it
   also downloads Rolimons' public item value list, without your sign-in.)
 - If Roblox replaces your cookie in a reply, the app saves the new one and copies it back into the Roblox
@@ -156,11 +160,12 @@ The item page also shows the item's **intelligence** from Rolimons: a one-year c
 - **Downgrade:** pick what you give; it suggests in-demand items (no projecteds) worth that plus the extra you ask for.
 - Items you add to the other side stay fixed and the planner fills the rest. It's a planning tool: you send the trade yourself on Roblox.
 
-**Trade ad alerts** (the **Ad alerts** chip in Market) notify you when someone posts a Rolimons trade ad you could take with your items: they offer more value than they ask for, and the ad meets your conditions. Tap the alert to open a trade with them on Roblox; **the app never sends trades**, you check and send it yourself.
+**Trade ad alerts** (the **Ad alerts** chip in Market) notify you when someone posts a Rolimons trade ad you could take with your items: they offer more value than they ask for, and the ad meets your conditions. Tap the alert to see the match in the app and tap **Send trade**: it shows exactly what you give and get, and sends only after you confirm. Sending from the app needs **Read my trades directly** and a Roblox sign-in; without them you can open the trade on Roblox instead.
 - **Conditions:** minimum gain for you (%), the value you give (at least / at most), trade type (**Upgrade**: you get fewer items than you give; **Downgrade**: more), the demand of the items you get, and skipping offers with projected items.
 - Ads asking for specific items match only if you own them (copies on trade hold don't count). Ads that ask only with tags (any, upgrade, downgrade, demand...) can match too: the app then picks which of your items to offer, close to a fair trade plus your minimum gain. Ads asking for robux, rares, projecteds or wishlist items are skipped.
 - **Never give:** items you don't want to trade away. Ads asking for them never match, and the app never picks them.
-- **Check the latest ads now** shows the current matches with a **Trade on Roblox** button.
+- **Recent alerts** lists the latest matches and whether each trade was sent; **Check the latest ads now** shows the current matches. Both have **Send trade**.
+- **Auto-send** (off by default) sends matching trades by itself, with the same conditions. **Test mode** (the default) only notifies you what it would send. In **Live** mode it sends at most the number of trades a day you set (up to 20), at most one per player a day, and only for ads posted in the last 10 minutes; you get a notification for each. If Roblox asks for 2-step verification, the trade isn't sent. Roblox's rules don't allow automating your account, and accounts that send trades automatically can be restricted or banned: use it at your own risk.
 - Rolimons only keeps the last few minutes of trade ads, so the alerts check every round of background checks: **Fast** catches the most; **Battery saver** misses some ads. Uses public data only (no Roblox sign-in), but your Rolimons sign-in on the Ads tab tells the app which items are yours. Robux in an offer count at 70% (after Roblox's fee).
 
 **Trade log** (the **Log** button in Trades) keeps your completed trades with what you gave and got, their value at the time and whether you won or lost, plus running totals. Completed trades the app shows under **Trades → Completed** are logged automatically; **Sync completed trades** reads your last 100. It needs **Read my trades directly** and a Roblox sign-in. The values are Rolimons values when the app first saw each trade.

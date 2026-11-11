@@ -94,7 +94,7 @@ def request_notification_permission() -> None:
         log.debug("Notification permission request failed: %s", e)
 
 
-TABS_FROM_NOTIFICATIONS = ("history", "trades", "home")
+TABS_FROM_NOTIFICATIONS = ("history", "trades", "home", "adalerts")  # adalerts: Market > Ad alerts
 
 
 def notify(title: str, text: str, notification_id: int = 2001, channel: str = NOTIFY_CHANNEL,
@@ -108,7 +108,7 @@ def notify(title: str, text: str, notification_id: int = 2001, channel: str = NO
         Context = autoclass("android.content.Context")
         Builder = autoclass("android.app.Notification$Builder")
         PendingIntent = autoclass("android.app.PendingIntent")
-        ctx = _context()
+        ctx = _app_context or _context()  # the app context also works from background threads
         manager = cast("android.app.NotificationManager", ctx.getSystemService(Context.NOTIFICATION_SERVICE))
         ensure_channels(manager)
         launch = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName())
@@ -473,7 +473,7 @@ def sign_out_web() -> None:
 # the main thread and reused from any thread.
 APP_CLASSES = ("org.roliposter.RobloxSession", "org.roliposter.RobloxApi", "org.roliposter.TradeWatcher",
                "org.roliposter.ForegroundText", "org.roliposter.AutoAccept", "org.roliposter.SocialAlerts",
-               "org.roliposter.DocumentIO")
+               "org.roliposter.DocumentIO", "org.roliposter.TradeSender")
 _classes: dict = {}
 _app_context = None
 
@@ -553,6 +553,19 @@ class RobloxDirect:
         import json
         reply = json.loads(str(_jclass("org.roliposter.RobloxApi").fetch(_app_ctx(), kind, arg, cursor)))
         return int(reply.get("status", -1)), str(reply.get("body", ""))
+
+
+def send_trade(partner_id: int, give: list[int], get: list[int], partner_robux: int = 0) -> tuple[int, int, str]:
+    """Sends one trade through org.roliposter.TradeSender (the Roblox sign-in stays in Java): the trade ad
+    "Send trade" button after you confirm, or auto-send. Returns (status, trade ID, message); 200 = sent.
+    Slow (several Roblox requests): never call on the UI thread."""
+    if not IS_ANDROID:
+        return 0, 0, "Sending trades works in the Android app."
+    import json
+    reply = json.loads(str(_jclass("org.roliposter.TradeSender").send(
+        _app_ctx(), int(partner_id), ",".join(str(int(i)) for i in give), ",".join(str(int(i)) for i in get),
+        int(partner_robux))))
+    return int(reply.get("status", -1)), int(reply.get("tradeId", 0) or 0), str(reply.get("message", ""))
 
 
 def trade_watch_wanted(cfg) -> bool:
