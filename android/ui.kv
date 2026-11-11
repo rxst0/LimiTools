@@ -1188,6 +1188,13 @@
                     height: dp(34)
                     selected: root.sort == 'worst'
                     on_release: root.set_sort('worst')
+                FlatButton:
+                    text: 'Log'
+                    size_hint_x: None
+                    width: dp(56)
+                    height: dp(34)
+                    font_size: sp(13)
+                    on_release: app.show('tradelog')
             ScrollView:
                 id: trades_scroll
                 do_scroll_x: False
@@ -1525,6 +1532,9 @@
                 text: 'Players'
                 selected: root.mode == 'players'
                 on_release: root.set_mode('players')
+            Chip:
+                text: 'Planner'
+                on_release: app.show('planner')
         BoxLayout:
             size_hint_y: None
             height: dp(64)
@@ -1630,6 +1640,12 @@
                         text: 'Stop watching' if root.watching else 'Watch'
                         on_release: root.toggle_watch()
                 BoxLayout:
+                    id: intel
+                    orientation: 'vertical'
+                    spacing: dp(8)
+                    size_hint_y: None
+                    height: self.minimum_height
+                BoxLayout:
                     size_hint_y: None
                     height: dp(46)
                     spacing: dp(8)
@@ -1639,6 +1655,121 @@
                     FlatButton:
                         text: 'Open on Rolimons'
                         on_release: root.open_rolimons()
+
+<PlannerScreen>:
+    name: 'planner'
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: BG
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        TopBar:
+            title: 'Trade planner'
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: 'vertical'
+                padding: dp(14), dp(12), dp(14), dp(30)
+                spacing: dp(10)
+                size_hint_y: None
+                height: self.minimum_height
+                Muted:
+                    text: 'Upgrade: pick what you want and get ideas for what to give. Downgrade: pick what you give and get ideas for what to ask for. Items you fix on the other side stay; the rest is filled in, small items included. You send the trade yourself on Roblox.'
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(40)
+                    spacing: dp(8)
+                    Chip:
+                        text: 'Upgrade'
+                        selected: root.mode == 'upgrade'
+                        on_release: root.set_mode('upgrade')
+                    Chip:
+                        text: 'Downgrade'
+                        selected: root.mode == 'downgrade'
+                        on_release: root.set_mode('downgrade')
+                Title:
+                    text: 'You want' if root.mode == 'upgrade' else 'You give'
+                BoxLayout:
+                    id: picked_box
+                    orientation: 'vertical'
+                    spacing: dp(8)
+                    size_hint_y: None
+                    height: self.minimum_height
+                FlatButton:
+                    text: '+  Add item'
+                    on_release: root.add_item('picked')
+                Title:
+                    text: ('You give' if root.mode == 'upgrade' else 'You get') + ' (optional, fixed)'
+                BoxLayout:
+                    id: keep_box
+                    orientation: 'vertical'
+                    spacing: dp(8)
+                    size_hint_y: None
+                    height: self.minimum_height
+                FlatButton:
+                    text: '+  Add item'
+                    on_release: root.add_item('keep')
+                FieldLabel:
+                    text: 'OVERPAY YOU OFFER (%)' if root.mode == 'upgrade' else 'EXTRA YOU ASK FOR (%)'
+                Field:
+                    id: pct
+                    text: '10'
+                    input_filter: 'float'
+                AccentButton:
+                    text: 'Suggest trades'
+                    on_release: root.suggest()
+                Txt:
+                    text: root.status_text
+                    color: WARN
+                    height: self.texture_size[1] if root.status_text else 0
+                BoxLayout:
+                    id: suggestions
+                    orientation: 'vertical'
+                    spacing: dp(12)
+                    size_hint_y: None
+                    height: self.minimum_height
+
+<TradeLogScreen>:
+    name: 'tradelog'
+    BoxLayout:
+        orientation: 'vertical'
+        canvas.before:
+            Color:
+                rgba: BG
+            Rectangle:
+                pos: self.pos
+                size: self.size
+        TopBar:
+            title: 'Trade log'
+        ScrollView:
+            do_scroll_x: False
+            BoxLayout:
+                orientation: 'vertical'
+                padding: dp(14), dp(12), dp(14), dp(30)
+                spacing: dp(10)
+                size_hint_y: None
+                height: self.minimum_height
+                Card:
+                    Txt:
+                        text: root.summary_text
+                    Muted:
+                        text: 'Values are Rolimons values when the app first saw each trade.'
+                    FlatButton:
+                        text: 'Syncing...' if root.busy else 'Sync completed trades'
+                        disabled: root.busy
+                        on_release: root.sync()
+                    Muted:
+                        text: root.status_text
+                        height: self.texture_size[1] if root.status_text else 0
+                BoxLayout:
+                    id: entries
+                    orientation: 'vertical'
+                    spacing: dp(8)
+                    size_hint_y: None
+                    height: self.minimum_height
 
 <HelpScreen>:
     name: 'help'

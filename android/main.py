@@ -54,6 +54,9 @@ from roliposter.roblox_trades import (KINDS, KIND_LABELS, ago, parse_details, pa
 from roliposter.portfolio import (RANGES, PriceLog, fetch_best_prices, fetch_history,  # noqa: E402
                                   realistic_price, totals)
 from roliposter.ai_advisor import PROVIDERS, Advice, AdvisorError, ask, build_context, check  # noqa: E402
+from roliposter.item_intel import fetch_item_intel  # noqa: E402
+from roliposter.trade_log import TradeLog  # noqa: E402
+from roliposter.trade_planner import plan_downgrade, plan_upgrade  # noqa: E402
 from roliposter.market import (active_traders, describe_ad, fetch_leaderboard, fetch_recent_ads,  # noqa: E402
                                lookup_user_id, lookup_username, verified_ids)
 from roliposter.backup import (BackupError, apply_backup, backup_filename, make_backup,  # noqa: E402
@@ -431,6 +434,8 @@ class TradesScreen(Screen):
         card = self._card(trade_id) if self._token is token else None
         if card:
             card.show(details)
+            if self.kind == "completed" and App.get_running_app().trade_log.add_details(card.trade, details):
+                App.get_running_app().trade_log.save()
             if self.sort != "newest":
                 self.resort()
             App.get_running_app().request_thumbs([i.asset_id for i in details.give.items + details.get.items])
@@ -1371,6 +1376,70 @@ class ItemScreen(Screen):
     def load(self, item_id: int):
         self.item_id = item_id
         self.refresh()
+        self.load_intel()
+
+    def load_intel(self):
+        """RAP / price history, sales, value changes and owners from the item's Rolimons page."""
+        box = self.ids.intel
+        box.clear_widgets()
+        box.add_widget(Factory.Muted(text="Loading sales, history and owners..."))
+        item_id = self.item_id
+
+        def work():
+            try:
+                intel = fetch_item_intel(requests.Session(), item_id)
+            except Exception as e:
+                log.warning("Item intel failed: %s", e)
+                intel = None
+            self._intel_ready(item_id, intel)
+        threading.Thread(target=work, daemon=True).start()
+
+    @mainthread
+    def _intel_ready(self, item_id: int, intel):
+        if item_id != getattr(self, "item_id", None):
+            return
+        app = App.get_running_app()
+        box = self.ids.intel
+        box.clear_widgets()
+        if intel is None:
+            box.add_widget(Factory.Muted(text="Couldn't load this item's history from Rolimons."))
+            return
+        year = 365 * 86400
+        rap, price = intel.rap.since(year), intel.best_price.since(year)
+        if len(rap.values) > 1:
+            box.add_widget(Factory.FieldLabel(text="LAST YEAR"))
+            chart = ValueChart(size_hint_y=None, height=dp(150))
+            # Listings far above RAP (nobody selling near value) would flatten the RAP line: leave them off.
+            cap = 3 * max(max(rap.values), getattr(app.catalog.get(item_id), "default_value", 0) or 0)
+            chart.series = [(LINE_COLORS["rap"], list(zip(rap.times, rap.values))),
+                            (LINE_COLORS["price"], [(t, v) for t, v in zip(price.times, price.values) if 0 < v <= cap])]
+            box.add_widget(chart)
+            legend = (f"[color={LINE_COLORS['rap']}][b]—[/b][/color] RAP {short_number(rap.values[-1])}     "
+                      f"[color={LINE_COLORS['price']}][b]—[/b][/color] Best price {short_number(price.values[-1])}")
+            box.add_widget(Factory.Txt(text=legend, font_size=sp(13), halign="center"))
+        lines = []
+        sold, avg = intel.sales_summary(30)
+        lines.append(f"Sales, last 30 days: [b]{sold}[/b]" + (f" at {avg:,} R$ on average" if avg else ""))
+        sold90, avg90 = intel.sales_summary(90)
+        if sold90:
+            lines.append(f"Last 90 days: {sold90} sold" + (f", {avg90:,} R$ on average" if avg90 else ""))
+        if intel.value_changes:
+            changes = [f"{time.strftime('%d %b %Y', time.localtime(t))}: {v:,}" for t, v in intel.value_changes[-4:]]
+            lines.append("Value changes: " + "  ·  ".join(reversed(changes)))
+        lines.append(f"{intel.owners:,} owners  ·  {intel.copies:,} copies  ·  {intel.hoarded:,} hoarded  ·  "
+                     f"{intel.deleted:,} deleted")
+        box.add_widget(Factory.Txt(text="\n".join(lines), font_size=sp(14)))
+        for title, people, detail in (
+                ("BIGGEST HOARDERS", intel.hoarders[:5], lambda o: f"{o.copies} copies"),
+                ("GOT A COPY MOST RECENTLY", intel.recent_owners[:8],
+                 lambda o: time.strftime("%d %b %Y", time.localtime(o.since)) if o.since else "")):
+            if not people:
+                continue
+            box.add_widget(Factory.FieldLabel(text=title))
+            for person in people:
+                row = ItemRow(thumb="", name=person.name, value=detail(person))
+                row.add_action("Open", lambda u=person.user_id: app.open_player(u))
+                box.add_widget(row)
 
     def refresh(self):
         app = App.get_running_app()
@@ -1434,13 +1503,190 @@ class ItemScreen(Screen):
         droid.open_url(f"https://www.rolimons.com/item/{self.item_id}")
 
 
+class PlannerScreen(Screen):
+    """Trade planner: pick what you want (upgrade) or what you give (downgrade); it suggests the other side.
+    A planning tool: you send the trade yourself on Roblox."""
+    mode = StringProperty("upgrade")
+    status_text = StringProperty("")
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.picked: list[int] = []   # upgrade: items you want; downgrade: items you give
+        self.keep: list[int] = []     # items you've fixed on the other side (the planner fills the rest)
+
+    def on_pre_enter(self):
+        self.refresh()
+
+    def set_mode(self, mode: str):
+        self.mode = mode
+        self.picked, self.keep = [], []
+        self.ids.suggestions.clear_widgets()
+        self.status_text = ""
+        self.refresh()
+
+    def add_item(self, which: str):
+        """which: "picked" or "keep". Upgrade: picked = want (any item), keep = give (yours)."""
+        app = App.get_running_app()
+        target = self.picked if which == "picked" else self.keep
+        if len(target) >= 4:
+            return app.toast("Up to 4 items per side.")
+        yours = (which == "keep") == (self.mode == "upgrade")
+        picker = app.sm.get_screen("picker")
+        picker.open_for("offer" if yours else "request", on_pick=lambda item_id: self._picked(target, item_id))
+        app.show("picker")
+
+    def _picked(self, target: list, item_id: int) -> bool:
+        target.append(item_id)
+        self.refresh()
+        return True
+
+    def remove(self, target: list, index: int):
+        target.pop(index)
+        self.refresh()
+
+    def refresh(self):
+        app = App.get_running_app()
+        for box, items in ((self.ids.picked_box, self.picked), (self.ids.keep_box, self.keep)):
+            box.clear_widgets()
+            for i, item_id in enumerate(items):
+                row = app.item_row(item_id)
+                row.add_action("×", lambda t=items, n=i: self.remove(t, n))
+                box.add_widget(row)
+            if not items:
+                box.add_widget(Factory.Muted(text="Nothing yet."))
+        app.request_thumbs(self.picked + self.keep)
+
+    def suggest(self):
+        app = App.get_running_app()
+        box = self.ids.suggestions
+        box.clear_widgets()
+        if not app.catalog:
+            self.status_text = "Item list still loading..."
+            return
+        if not self.picked:
+            self.status_text = ("Add the item(s) you want first." if self.mode == "upgrade"
+                                else "Add the item(s) you want to give first.")
+            return
+        try:
+            pct = float(self.ids.pct.text or 0)
+        except ValueError:
+            pct = 0
+        if self.mode == "upgrade":
+            if app.inventory is None or app.inventory.private:
+                self.status_text = "Your inventory isn't available (not loaded yet, or private)."
+                return
+            ideas = plan_upgrade(self.picked, app.inventory, app.catalog, overpay=pct, keep_give=self.keep)
+        else:
+            ideas = plan_downgrade(self.picked, app.catalog, ask=pct, keep_get=self.keep)
+        self.status_text = "" if ideas else "No good fit found. Try a different overpay or fewer fixed items."
+        for n, idea in enumerate(ideas, 1):
+            card = Factory.Card()
+            if abs(idea.overpay) < 0.05:
+                balance = "Even trade"
+            elif idea.overpay > 0:
+                balance = f"You overpay {idea.overpay:.1f}%"
+            else:
+                balance = f"You get {-idea.overpay:.1f}% more"
+            card.add_widget(Factory.Title(text=f"Idea {n}  [size={int(sp(13))}][color={P.MUTED}]{balance}"
+                                               f"[/color][/size]"))
+            for label, items, total in (("YOU GIVE", idea.give, idea.give_value), ("YOU GET", idea.get, idea.get_value)):
+                card.add_widget(Factory.FieldLabel(text=f"{label}  ·  {total:,}"))
+                for item_id in items:
+                    card.add_widget(app.item_row(item_id))
+            box.add_widget(card)
+            app.request_thumbs(idea.give + idea.get)
+        if ideas:
+            box.add_widget(Factory.Muted(text="Values are Rolimons values. Check demand and recent sales before "
+                                              "sending, and send the trade yourself on Roblox."))
+
+
+class TradeLogScreen(Screen):
+    """Trade tracker: your completed trades with their value at the time, and running totals."""
+    summary_text = StringProperty("")
+    status_text = StringProperty("")
+    busy = BooleanProperty(False)
+
+    def on_pre_enter(self):
+        self.refresh()
+
+    def refresh(self):
+        app = App.get_running_app()
+        log = app.trade_log
+        t = log.totals()
+        if t.trades:
+            tone = P.OK if t.net > 0 else P.BAD if t.net < 0 else P.MUTED
+            self.summary_text = (f"[b]{t.trades} trades[/b]  ·  {t.wins} wins  ·  {t.losses} losses\n"
+                                 f"Net [color={tone}][b]{'+' if t.net >= 0 else '-'}{abs(t.net):,}[/b][/color] "
+                                 f"value  ·  given {short_number(t.given)}, received {short_number(t.received)}")
+        else:
+            self.summary_text = ("No trades logged yet. Tap Sync, or open Trades > Completed: every completed "
+                                 "trade the app sees is logged.")
+        box = self.ids.entries
+        box.clear_widgets()
+        for trade in log.newest_first()[:150]:
+            when = time.strftime("%d %b %Y", time.localtime(trade.time)) if trade.time else "?"
+            tone = P.OK if trade.gain > 0 else P.BAD if trade.gain < 0 else P.MUTED
+            pct = f" ({trade.gain / trade.give_value * 100:+.0f}%)" if trade.give_value else ""
+            box.add_widget(ItemRow(thumb=app.thumb_source(trade.get[0]) if trade.get else "",
+                                   name=f"{trade.partner}  ·  {when}",
+                                   value=f"Gave {trade.give_value:,}  ·  got {trade.get_value:,}  ·  "
+                                         f"[color={tone}]{'+' if trade.gain >= 0 else ''}{trade.gain:,}{pct}[/color]"))
+        app.request_thumbs([t.get[0] for t in log.newest_first()[:150] if t.get])
+
+    def sync(self):
+        """Reads your recent completed trades (up to 100) and logs the new ones."""
+        app = App.get_running_app()
+        if self.busy:
+            return
+        if not (app.cfg.app.direct_trades and droid.RobloxDirect.signed_in()):
+            return app.notice("Trade log", 'Syncing needs "Read my trades directly" (Settings) and a Roblox sign-in.')
+        self.busy = True
+        self.status_text = "Reading your completed trades..."
+        catalog = app.catalog
+
+        def work():
+            added, cursor = 0, ""
+            try:
+                for _page in range(4):
+                    status, body = droid.RobloxDirect.fetch("list", "completed", cursor)
+                    if status != 200:
+                        break
+                    trades, cursor = parse_list(body)
+                    for trade in trades:
+                        if trade.id in app.trade_log.trades:
+                            continue
+                        status, raw = droid.RobloxDirect.fetch("trade", str(trade.id))
+                        if status == 429:
+                            time.sleep(6)
+                            status, raw = droid.RobloxDirect.fetch("trade", str(trade.id))
+                        if status == 200:
+                            added += app.trade_log.add_details(trade, parse_details(raw, trade.partner_id, catalog))
+                    if not cursor:
+                        break
+                app.trade_log.save()
+                self._synced(f"Logged {added} new trade{'s' if added != 1 else ''}.")
+            except Exception as e:
+                log.warning("Trade log sync failed: %s", e)
+                self._synced("Couldn't finish syncing. Try again in a minute.")
+        threading.Thread(target=work, daemon=True).start()
+
+    @mainthread
+    def _synced(self, message: str):
+        self.busy = False
+        self.status_text = message
+        self.refresh()
+
+
 class PickerScreen(Screen):
     """Full-screen item search: tap an item to add it to the ad being edited."""
     title = StringProperty("Add item")
     side = "want"
 
-    def open_for(self, side: str):
+    def open_for(self, side: str, on_pick=None):
+        """side "offer": your items; "request": any item. on_pick(item_id) -> bool: who gets the item
+        (default: the ad editor)."""
         self.side = side
+        self.on_pick = on_pick
         self.title = "Add item you offer" if side == "offer" else "Add item you want"
         self.ids.search.text = ""
         self.search()
@@ -1498,7 +1744,8 @@ class PickerScreen(Screen):
 
     def choose(self, item_id: int):
         app = App.get_running_app()
-        if app.sm.get_screen("edit").add(self.side, item_id):
+        handler = getattr(self, "on_pick", None) or (lambda i: app.sm.get_screen("edit").add(self.side, i))
+        if handler(item_id):
             self.ids.search.focus = False
             app.go_back()
 
@@ -1699,6 +1946,7 @@ class RoliApp(App):
         self.value_history = None   # roliposter.portfolio.History, from your Rolimons player page
         self.best_prices = None     # asset ID -> cheapest copy for sale now (Rolimons deals page)
         self.price_log = PriceLog(HOME / "price_history.json")
+        self.trade_log = TradeLog(HOME / "trade_log.json")
         self.history_status = ""
         self._portfolio_at = 0.0
         self._stack: list[str] = []
@@ -1710,7 +1958,7 @@ class RoliApp(App):
         self.sm = SwipeManager(transition=SlideTransition(duration=0.18))
         for screen in (HomeScreen(), EditScreen(), SettingsScreen(), HistoryScreen(), CookieScreen(),
                        TradesScreen(), TradeScreen(), ItemsScreen(), AutoScreen(), AiScreen(), HelpScreen(),
-                       PickerScreen(), MarketScreen(), ItemScreen()):
+                       PickerScreen(), MarketScreen(), ItemScreen(), PlannerScreen(), TradeLogScreen()):
             self.sm.add_widget(screen)
         # Before anything opens the Trades tab (e.g. a tapped notification): list or Roblox page.
         Clock.schedule_once(lambda *_: self.sync_direct_trades(), 0)
@@ -1752,6 +2000,14 @@ class RoliApp(App):
         self.nav.clear_widgets()
         for tab in self.visible_tabs():
             self.nav.add_widget(NavButton(text=TAB_LABELS[tab], tab=tab))
+
+    def open_player(self, user_id: int):
+        """A player's card (Market > Players), from anywhere in the app."""
+        market = self.sm.get_screen("market")
+        self.switch_tab("market")
+        market.mode = "players"
+        market.ids.search.text = ""
+        market.open_player(user_id)
 
     def ensure_prices(self):
         """Current best prices (Market tab, item screen), loaded once in the background."""

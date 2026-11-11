@@ -347,6 +347,31 @@ class SelfTest:
         yield 1
         self.dismiss_popups()
         self.record("unwatching removes it", item_id not in load_config(config_path()).market.watchlist)
+        ok = yield from self.wait_until(lambda: not any("Loading" in getattr(w, "text", "")
+                                                        for w in item.ids.intel.children), 45)
+        texts = " ".join(getattr(w, "text", "") for w in item.ids.intel.children)
+        self.record("item page shows sales, history and owners", ok and "owners" in texts, texts[:160])
+        self.shot("4c-item-intel")
+        app.go_back()
+        yield 1
+        # Trade planner (downgrade needs no inventory): pick an item, get ideas.
+        app.show("planner")
+        yield 1
+        planner = app.sm.get_screen("planner")
+        planner.set_mode("downgrade")
+        planner._picked(planner.picked, item_id)
+        planner.suggest()
+        yield 1
+        ideas = [w for w in planner.ids.suggestions.children if hasattr(w, "children") and w.children]
+        self.record("trade planner suggests trades", len(ideas) > 0, planner.status_text)
+        self.shot("4d-planner")
+        app.go_back()
+        yield 1
+        app.show("tradelog")
+        yield 1
+        log_screen = app.sm.get_screen("tradelog")
+        self.record("trade log opens", app.sm.current == "tradelog" and bool(log_screen.summary_text),
+                    log_screen.summary_text[:80])
         app.go_back()
         yield 1
         market.set_mode("players")
