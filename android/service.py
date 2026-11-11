@@ -21,6 +21,9 @@ LIMITEDS_EVERY = 5 * 60     # at least this long between checks (longer with a s
 DEALS_EVERY = 10 * 60
 CATALOG_EVERY = 30 * 60
 DEAL_REPEAT = 24 * 3600  # the same deal notifies again after a day
+TRACK_ADS_EVERY = 5 * 60    # tracked players' new trade ads (Rolimons keeps only its latest few hundred)
+TRACK_VALUE_EVERY = 30 * 60  # tracked players' inventory value
+TRACK_VALUE_CHANGE = 5.0     # % change that's worth an alert
 SEEN_FILE = "market_seen.json"
 MAX_ALERTS_PER_CHECK = 3
 
@@ -118,8 +121,9 @@ def market_loop(home, done: threading.Event) -> None:
     import requests
 
     from roliposter import market
+    from roliposter.inventory import fetch_inventory
     from roliposter.items import fetch_catalog
-    from roliposter.portfolio import fetch_best_prices
+    from roliposter.portfolio import fetch_best_prices, totals
 
     seen_path = home / SEEN_FILE
     try:
@@ -127,7 +131,7 @@ def market_loop(home, done: threading.Event) -> None:
     except (OSError, ValueError):
         seen = market.Seen()
     session = requests.Session()
-    catalog, catalog_at, limiteds_at, deals_at = None, 0.0, 0.0, 0.0
+    catalog, catalog_at, limiteds_at, deals_at, ads_at, values_at = None, 0.0, 0.0, 0.0, 0.0, 0.0
     while not done.is_set():
         cfg = load_cfg()
         now = time.time()
@@ -157,6 +161,34 @@ def market_loop(home, done: threading.Event) -> None:
                             title, text = market.deal_alert(deal)
                             droid.notify_url(title, text, f"https://www.roblox.com/catalog/{deal.item_id}",
                                              7000 + deal.item_id % 100000)
+                tracked = mk.tracked_players if mk.track_alerts else {}
+                if tracked and now - ads_at >= max(TRACK_ADS_EVERY, pace):
+                    ads_at = now
+                    if catalog is None or now - catalog_at >= CATALOG_EVERY:
+                        catalog, catalog_at = fetch_catalog(session), now
+                    sent = 0
+                    for ad in market.fetch_recent_ads(session):
+                        if ad.user_id in tracked and seen.is_new("ads", str(ad.id)) and sent < MAX_ALERTS_PER_CHECK:
+                            droid.notify_url(f"{ad.name} posted a trade ad", market.describe_ad(ad, catalog),
+                                             f"https://www.rolimons.com/player/{ad.user_id}", 8000 + ad.id % 100000)
+                            sent += 1
+                if tracked and now - values_at >= max(TRACK_VALUE_EVERY, 4 * pace):
+                    values_at = now
+                    if catalog is None or now - catalog_at >= CATALOG_EVERY:
+                        catalog, catalog_at = fetch_catalog(session), now
+                    values = seen.data.setdefault("values", {})
+                    for user_id, name in list(tracked.items())[:20]:
+                        inventory = fetch_inventory(session, user_id)
+                        if inventory.private:
+                            continue
+                        value = totals(inventory, catalog).value
+                        before = values.get(str(user_id))
+                        values[str(user_id)] = value
+                        if before and abs(value - before) / before * 100 >= TRACK_VALUE_CHANGE:
+                            pct = (value - before) / before * 100
+                            droid.notify_url(f"{name}'s value {'rose' if pct > 0 else 'fell'} {abs(pct):.0f}%",
+                                             f"Now {value:,} (was {before:,}).",
+                                             f"https://www.rolimons.com/player/{user_id}", 9000 + user_id % 100000)
                 seen_path.write_text(json.dumps(seen.data), encoding="utf-8")
             except Exception as e:  # network trouble etc.: try again next round
                 droid.log.debug("Market check failed: %s", e)

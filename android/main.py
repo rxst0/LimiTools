@@ -39,7 +39,7 @@ import runner  # noqa: E402
 from roliposter import __version__  # noqa: E402
 from roliposter import events as ev  # noqa: E402
 from roliposter import palette as P  # noqa: E402
-from roliposter.config import (CHECK_SPEEDS, MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, OPTIONAL_TABS,  # noqa: E402
+from roliposter.config import (CHECK_SPEEDS, MAX_OFFER_ITEMS, MAX_REQUEST_SLOTS, MAX_TRACKED, OPTIONAL_TABS,  # noqa: E402
                                VALID_TAGS, Ad, Config,
                                ConfigError, load_config, save_config, validate_config)
 from roliposter.cookie import (COOKIE_ENV_VAR, clean_cookie, cookie_info, get_cookie,  # noqa: E402
@@ -54,7 +54,8 @@ from roliposter.roblox_trades import (KINDS, KIND_LABELS, ago, parse_details, pa
 from roliposter.portfolio import (RANGES, PriceLog, fetch_best_prices, fetch_history,  # noqa: E402
                                   realistic_price, totals)
 from roliposter.ai_advisor import PROVIDERS, Advice, AdvisorError, ask, build_context, check  # noqa: E402
-from roliposter.market import lookup_username  # noqa: E402
+from roliposter.market import (active_traders, describe_ad, fetch_leaderboard, fetch_recent_ads,  # noqa: E402
+                               lookup_user_id, lookup_username, verified_ids)
 from roliposter.backup import (BackupError, apply_backup, backup_filename, make_backup,  # noqa: E402
                                merge_price_history, parse_backup, save_safety_copy, summary)
 from roliposter.state import PostHistory  # noqa: E402
@@ -86,7 +87,7 @@ The Items tab shows the limiteds in your Rolimons inventory, their total value a
 Turn this on in Settings to see your trades as a list in the app (received, sent, completed, inactive) with item pictures and Rolimons values, sorted newest first or by best or worst deal, and to get alerts for new and accepted trades even when the app is closed. To do this, the app keeps an encrypted copy of your Roblox sign-in (.ROBLOSECURITY) on this phone and uses it only to read your trades. It's never sent anywhere except Roblox. It can't be used to decline or send trades, and it only accepts trades if you turn on live auto-accept. Turning the option off deletes the copy.
 
 [b]Market[/b]
-Items: search any limited, open it for its value, RAP, demand, trend and current price, and tap Watch to get an alert when someone lists it under value. Players: look up any username to see their value, chart and items.
+Items: search any limited, open it for its value, RAP, demand, trend and current price, and tap Watch to get an alert when someone lists it under value. Players: look up any username to see their value, chart and items. The Richest, Traders and Verified lists help you find people; Track someone to get alerts when they post a trade ad or their value changes. Following or friending them is up to you, on their profile.
 
 [b]New limited alerts (optional)[/b]
 Settings > New limiteds and watchlist notifies you about new limiteds in the Roblox catalog, with the price, copies and description. Use the filters (verified creators, max price, max copies): new UGC limiteds come out many times a day. No Roblox sign-in needed.
@@ -1099,13 +1100,22 @@ class ItemsScreen(Screen):
 class MarketScreen(Screen):
     """Market tab: the item browser (search any limited, watch it for deals) and player lookup."""
     mode = StringProperty("items")
+    discover = StringProperty("richest")   # Players: richest / traders / verified / tracked
     status_text = StringProperty("")
     busy = BooleanProperty(False)
+    DISCOVER_CACHE = 10 * 60
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self._cache = {}       # list name -> (fetched at, rows)
+        self._loading = set()  # lists being fetched
 
     def on_pre_enter(self):
         App.get_running_app().ensure_prices()
         if self.mode == "items":
             self.show_items()
+        elif not self.ids.search.text.strip():
+            self.show_discover()
 
     def set_mode(self, mode: str):
         self.mode = mode
@@ -1114,6 +1124,8 @@ class MarketScreen(Screen):
         self.ids.results.clear_widgets()
         if mode == "items":
             self.show_items()
+        else:
+            self.show_discover()
 
     def schedule_search(self):
         if self.mode == "items":
@@ -1163,7 +1175,113 @@ class MarketScreen(Screen):
         app.sm.get_screen("item").load(item_id)
         app.show("item")
 
-    # ---- players -------------------------------------------------------------------------------
+    def toggle_track(self, player, button):
+        app = App.get_running_app()
+        tracked = app.cfg.market.tracked_players
+        if player.id in tracked:
+            del tracked[player.id]
+            button.text = "Track (alerts for trade ads and value changes)"
+            app.persist()
+            app.apply_trade_notifications()
+            return app.toast("Stopped tracking")
+        if len(tracked) >= MAX_TRACKED:
+            return app.notice("Track", f"You can track up to {MAX_TRACKED} players. Stop tracking someone first.")
+        tracked[player.id] = player.name
+        button.text = "Stop tracking"
+        app.persist()
+        app.apply_trade_notifications()  # starts the background checks if needed
+        droid.request_notification_permission()
+        app.toast(f"Tracking {player.name}")
+
+    # ---- players: discover lists ------------------------------------------------------------------
+    def set_discover(self, name: str):
+        self.discover = name
+        self.ids.search.text = ""
+        self.show_discover()
+
+    def show_discover(self, force: bool = False):
+        """Lists of interesting people. Opening one shows their card; following them is up to you."""
+        app = App.get_running_app()
+        kind = self.discover
+        if kind == "tracked":
+            rows = [(user_id, name, "Tracked: alerts for new trade ads and value changes", "")
+                    for user_id, name in app.cfg.market.tracked_players.items()]
+            return self._render_discover(rows, "Nobody tracked yet. Open a player and tap Track.")
+        cached = self._cache.get(kind)
+        if cached and not force and time.time() - cached[0] < self.DISCOVER_CACHE:
+            return self._render_discover(cached[1])
+        if kind in self._loading:  # its own flag, so Look up still works while a list loads
+            return
+        self._loading.add(kind)
+        self.status_text = "Loading..."
+        self.ids.results.clear_widgets()
+        owned = set((app.owned_counts() or {}).keys())
+        wanted = set(app.cfg.market.watchlist)
+        catalog = app.catalog
+
+        def work():
+            session = requests.Session()
+            try:
+                if kind == "richest":
+                    rows = [(l.id, f"#{l.rank}  {l.name}", f"Value {l.value:,}  ·  RAP {l.rap:,}", "")
+                            for l in fetch_leaderboard(session)]
+                elif kind == "traders":
+                    rows = [(ad.user_id, ad.name, describe_ad(ad, catalog), why)
+                            for ad, why in active_traders(fetch_recent_ads(session), owned, wanted)]
+                else:  # verified: the verified accounts among the richest players and active traders
+                    leaders = fetch_leaderboard(session)
+                    traders = [ad for ad, _why in active_traders(fetch_recent_ads(session), owned, wanted, limit=200)]
+                    people = {l.id: (f"#{l.rank}  {l.name}", f"Value {l.value:,}") for l in leaders}
+                    for ad in traders:
+                        people.setdefault(ad.user_id, (ad.name, "Posting trade ads"))
+                    verified = verified_ids(session, list(people))
+                    rows = [(uid, name, detail, "") for uid, (name, detail) in people.items() if uid in verified]
+                self._discover_ready(kind, rows, "")
+            except Exception as e:
+                log.warning("Discover list failed: %s", e)
+                self._discover_ready(kind, None, "Couldn't load this list. Check your internet and try again.")
+        threading.Thread(target=work, daemon=True).start()
+
+    @mainthread
+    def _discover_ready(self, kind: str, rows, error: str):
+        self._loading.discard(kind)
+        showing = (self.mode == "players" and self.discover == kind and not self.ids.search.text.strip()
+                   and not self.busy)
+        if rows is not None:
+            self._cache[kind] = (time.time(), rows)
+        if showing:
+            self.status_text = error
+            if rows is not None:
+                self._render_discover(rows)
+
+    def _render_discover(self, rows, empty: str = "Nobody here right now."):
+        box = self.ids.results
+        box.clear_widgets()
+        self.status_text = ""
+        notes = {"richest": "The richest players by Rolimons value.",
+                 "traders": "People posting Rolimons trade ads right now. Ads that involve items you own or "
+                            "watch come first.",
+                 "verified": "Verified accounts among the richest players and active traders.",
+                 "tracked": "Players you track (up to 20)."}
+        box.add_widget(Factory.Muted(text=notes.get(self.discover, "") + " Open someone to see their items; "
+                                     "follow or friend them yourself on their Roblox profile."))
+        if not rows:
+            box.add_widget(Factory.Muted(text=empty, halign="center"))
+        for user_id, name, detail, why in rows:
+            text = f"[color={P.OK}]{why}[/color]  ·  {detail}" if why else detail
+            row = ItemRow(thumb="", name=name, value=text)
+            row.add_action("Open", lambda u=user_id, n=name: self.open_player(u), accent=True)
+            box.add_widget(row)
+
+    def open_player(self, user_id: int):
+        if self.busy:
+            return
+        self.busy = True
+        self.status_text = "Loading player..."
+        self.ids.results.clear_widgets()
+        self._load_player(lambda session: lookup_user_id(session, user_id), "That player couldn't be found.")
+
+    # ---- players: lookup and the player card --------------------------------------------------------
     def lookup(self):
         name = self.ids.search.text.strip()
         if not name or self.busy:
@@ -1171,13 +1289,15 @@ class MarketScreen(Screen):
         self.busy = True
         self.status_text = f"Looking up {name}..."
         self.ids.results.clear_widgets()
+        self._load_player(lambda session: lookup_username(session, name), f"No Roblox user called {name}.")
 
+    def _load_player(self, find, not_found: str):
         def work():
             session = requests.Session()
             try:
-                player = lookup_username(session, name)
+                player = find(session)
                 if player is None:
-                    return self._player_ready(None, None, None, f"No Roblox user called {name}.")
+                    return self._player_ready(None, None, None, not_found)
                 inventory = fetch_inventory(session, player.id)
                 try:
                     history = fetch_history(session, player.id)
@@ -1224,6 +1344,10 @@ class MarketScreen(Screen):
             btn.bind(on_release=lambda *_a, u=url: droid.open_url(u))
             buttons.add_widget(btn)
         card.add_widget(buttons)
+        tracked = player.id in app.cfg.market.tracked_players
+        track = FlatButton(text="Stop tracking" if tracked else "Track (alerts for trade ads and value changes)")
+        track.bind(on_release=lambda *_a: self.toggle_track(player, track))
+        card.add_widget(track)
         box.add_widget(card)
         if t:
             box.add_widget(Factory.FieldLabel(text="MOST VALUABLE ITEMS"))

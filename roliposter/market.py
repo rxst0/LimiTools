@@ -3,6 +3,8 @@
 All public data, no sign-in: Roblox's catalog search for new collectibles, Roblox's username lookup,
 Rolimons' item list, deals page (current best prices) and player pages.
 """
+import html
+import re
 import time
 from dataclasses import dataclass
 
@@ -152,3 +154,123 @@ class Seen:
             for old in sorted(seen, key=seen.get)[:len(seen) - 1000]:
                 del seen[old]
         return True
+
+
+# ---- Discover: richest players, active traders, verified accounts, tracked players ------------------
+LEADERBOARD_URL = "https://www.rolimons.com/leaderboard"
+RECENT_ADS_URL = "https://api.rolimons.com/tradeads/v1/getrecentads"
+USERS_URL = "https://users.roblox.com/v1/users"
+USER_URL = "https://users.roblox.com/v1/users/{}"
+_LEADER = re.compile(r'<a href="/player/(\d+)"><div><h6[^>]*title="([^"]*)".*?#([\d,]+)</span>.*?R\$ ([\d,]+)</span>'
+                     r'.*?RAP</small>.*?R\$ ([\d,]+)', re.S)
+
+
+@dataclass
+class Leader:
+    id: int
+    name: str
+    rank: int
+    value: int
+    rap: int
+
+
+@dataclass
+class TradeAd:
+    id: int
+    time: float
+    user_id: int
+    name: str
+    offer_items: list[int]
+    offer_robux: int
+    request_items: list[int]
+    request_tags: list[int]
+
+
+def parse_leaderboard(page: str) -> list[Leader]:
+    leaders = []
+    for m in _LEADER.finditer(page):
+        player_id, name, rank, value, rap = m.groups()
+        leaders.append(Leader(int(player_id), html.unescape(name), int(rank.replace(",", "")),
+                              int(value.replace(",", "")), int(rap.replace(",", ""))))
+    return leaders
+
+
+def fetch_leaderboard(session: requests.Session, timeout: float = 25) -> list[Leader]:
+    resp = session.get(LEADERBOARD_URL, headers={"User-Agent": USER_AGENT}, timeout=timeout)
+    resp.raise_for_status()
+    return parse_leaderboard(resp.text)
+
+
+def parse_recent_ads(data: dict) -> list[TradeAd]:
+    """Rolimons' latest trade ads: [ad id, time, user id, username, {offer}, {request}], newest first."""
+    ads = []
+    for row in data.get("trade_ads") or []:
+        try:
+            ad_id, when, user_id, name, offer, request = row[:6]
+            ads.append(TradeAd(int(ad_id), float(when), int(user_id), str(name),
+                               [int(i) for i in offer.get("items", [])], int(offer.get("robux") or 0),
+                               [int(i) for i in request.get("items", [])], [int(t) for t in request.get("tags", [])]))
+        except (TypeError, ValueError, AttributeError):
+            continue
+    ads.sort(key=lambda a: -a.time)
+    return ads
+
+
+def fetch_recent_ads(session: requests.Session, timeout: float = 20) -> list[TradeAd]:
+    resp = session.get(RECENT_ADS_URL, headers={"User-Agent": USER_AGENT}, timeout=timeout)
+    resp.raise_for_status()
+    return parse_recent_ads(resp.json())
+
+
+def active_traders(ads: list[TradeAd], owned: set[int], wanted: set[int], limit: int = 50) -> list[tuple[TradeAd, str]]:
+    """One row per trader (their newest ad), ads that matter to you first: they want something you own,
+    or offer something on your watchlist. Returns (ad, why it matters or "")."""
+    seen, rows = set(), []
+    for ad in ads:
+        if ad.user_id in seen:
+            continue
+        seen.add(ad.user_id)
+        reasons = []
+        if wanted & set(ad.offer_items):
+            reasons.append("offers an item you're watching")
+        if owned & set(ad.request_items):
+            reasons.append("wants an item you own")
+        rows.append((ad, " and ".join(reasons)))
+    rows.sort(key=lambda r: (not r[1], -r[0].time))
+    return rows[:limit]
+
+
+def verified_ids(session: requests.Session, user_ids: list[int], timeout: float = 20) -> set[int]:
+    """Which of these Roblox users have the verified badge (batches of 100)."""
+    found = set()
+    for start in range(0, len(user_ids), 100):
+        resp = session.post(USERS_URL, json={"userIds": user_ids[start:start + 100], "excludeBannedUsers": True},
+                            headers={"User-Agent": USER_AGENT}, timeout=timeout)
+        resp.raise_for_status()
+        found |= {int(u["id"]) for u in resp.json().get("data") or [] if u.get("hasVerifiedBadge")}
+    return found
+
+
+def lookup_user_id(session: requests.Session, user_id: int, timeout: float = 15) -> Player | None:
+    resp = session.get(USER_URL.format(int(user_id)), headers={"User-Agent": USER_AGENT}, timeout=timeout)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    row = resp.json()
+    return Player(int(row["id"]), str(row.get("name") or ""), str(row.get("displayName") or ""),
+                  bool(row.get("hasVerifiedBadge")))
+
+
+def describe_ad(ad: TradeAd, catalog: ItemCatalog | None) -> str:
+    """"Dominus Empyreus + 2 more for upgrade, demand" style summary."""
+    def names(ids):
+        labels = [(catalog.get(i).acronym or catalog.get(i).name) if catalog and catalog.get(i) else str(i) for i in ids]
+        return ", ".join(labels[:3]) + (f" +{len(labels) - 3}" if len(labels) > 3 else "")
+    tags = [AD_TAGS.get(t, str(t)) for t in ad.request_tags]
+    offer = names(ad.offer_items) + (f" + {ad.offer_robux:,} R$" if ad.offer_robux else "")
+    want = ", ".join([names(ad.request_items)] * bool(ad.request_items) + tags) or "anything"
+    return f"{offer or 'robux'} for {want}"
+
+
+AD_TAGS = {1: "any", 2: "demand", 3: "rares", 4: "robux", 5: "upgrade", 6: "downgrade", 7: "rap", 8: "wishlist",
+           9: "projecteds", 10: "adds"}

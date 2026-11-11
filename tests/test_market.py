@@ -87,3 +87,49 @@ def test_lookup_username():
     assert session.sent["usernames"] == ["Builderman"]
     assert lookup_username(_Session({"data": []}), "nobody") is None
     assert lookup_username(_Session({}), "  ") is None
+
+
+LEADERBOARD_HTML = (
+    '<div><a href="/player/1"><div><h6 class="x" title="Roblox" style="">Roblox</h6></div><img>'
+    '<small>Rank</small><span class="a">#1</span><small>Value</small><span class="b">R$ 1,362,264,144</span>'
+    '<small class="text-muted">RAP</small></div><div><span class="c">R$ 425,000,000</span></a></div>'
+    '<div><a href="/player/80254"><div><h6 title="Stick &amp; Luke">Stick</h6></div>'
+    '<span>#2</span><span>R$ 990,925,098</span><small>RAP</small><span>R$ 12</span></a></div>')
+RECENT_ADS = {"success": True, "trade_ads": [
+    [11, 1000, 5, "older", {"items": [1]}, {"tags": [5]}],
+    [12, 2000, 6, "wantsyours", {"items": [9]}, {"items": [1], "tags": []}],
+    [13, 3000, 5, "newer", {"items": [2], "robux": 500}, {"tags": [1, 4]}],
+    [14, 4000, 7, "nomatch", {"items": [3]}, {"tags": [2]}],
+    ["bad row"],
+]}
+
+
+def test_parse_leaderboard():
+    from roliposter.market import parse_leaderboard
+    leaders = parse_leaderboard(LEADERBOARD_HTML)
+    assert [(l.id, l.name, l.rank, l.value, l.rap) for l in leaders] == [
+        (1, "Roblox", 1, 1362264144, 425000000), (80254, "Stick & Luke", 2, 990925098, 12)]
+
+
+def test_recent_ads_and_active_traders():
+    from roliposter.market import active_traders, describe_ad, parse_recent_ads
+    ads = parse_recent_ads(RECENT_ADS)
+    assert [a.id for a in ads] == [14, 13, 12, 11]  # newest first, bad row skipped
+    rows = active_traders(ads, owned={1}, wanted={2})
+    # one row per trader (their newest ad), the ones that matter to you first
+    assert [(r[0].name, r[1]) for r in rows] == [
+        ("newer", "offers an item you're watching"), ("wantsyours", "wants an item you own"), ("nomatch", "")]
+    assert describe_ad(ads[1], CATALOG) == "JL + 500 R$ for any, robux"
+    assert describe_ad(ads[2], CATALOG).startswith("9 for WH")
+
+
+def test_verified_ids_batches():
+    from roliposter.market import verified_ids
+    calls = []
+
+    class S:
+        def post(self, url, json=None, headers=None, timeout=None):
+            calls.append(json["userIds"])
+            return _Resp({"data": [{"id": i, "hasVerifiedBadge": i % 2 == 0} for i in json["userIds"]]})
+    assert verified_ids(S(), list(range(1, 151))) == set(range(2, 151, 2))
+    assert [len(c) for c in calls] == [100, 50]

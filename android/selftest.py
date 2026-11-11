@@ -357,6 +357,33 @@ class SelfTest:
                     market.status_text or f"{len(market.ids.results.children)} widgets")
         yield 2
         self.shot("11-player-lookup")
+        # Discover lists: open someone from a list, track and untrack them.
+        market.ids.search.text = ""
+        for kind in ("richest", "traders"):
+            market.set_discover(kind)
+            ok = yield from self.wait_until(lambda: not market.busy and len(market.ids.results.children) > 3, 60)
+            self.record(f"discover list '{kind}' loads", ok, market.status_text or
+                        f"{len(market.ids.results.children)} rows")
+        market.set_discover("richest")
+        yield from self.wait_until(lambda: not market.busy, 30)
+        self.shot("12-discover")
+        rows = [w for w in market.ids.results.children if hasattr(w, "add_action")]
+        if rows:
+            rows[-1].ids.actions.children[0].dispatch("on_release")  # "Open" on the first person
+            ok = yield from self.wait_until(lambda: not market.busy, 60)
+            buttons = [w for card in market.ids.results.children for w in getattr(card, "children", [])
+                       if getattr(w, "text", "").startswith("Track")]
+            self.record("opening someone from a list shows their card", ok and bool(buttons), market.status_text)
+            if buttons:
+                buttons[0].dispatch("on_release")
+                yield 1
+                self.dismiss_popups()
+                tracked = load_config(config_path()).market.tracked_players
+                self.record("tracking a player saves them", len(tracked) == 1, str(tracked))
+                buttons[0].dispatch("on_release")
+                yield 1
+                self.dismiss_popups()
+                self.record("untracking removes them", not load_config(config_path()).market.tracked_players)
         market.set_mode("items")
         # Hiding a tab removes it from the tab bar; showing it brings it back.
         app.cfg.app.hidden_tabs = ["auto"]

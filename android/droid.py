@@ -631,7 +631,8 @@ def open_document(callback, desktop_folder: Path | None = None) -> None:
 def market_watch_wanted(cfg) -> bool:
     """New limited alerts or watchlist deals: public data, so no Roblox sign-in needed."""
     mk = cfg.market
-    return IS_ANDROID and cfg.app.notifications and (mk.new_limited_alerts or (mk.watch_alerts and bool(mk.watchlist)))
+    return IS_ANDROID and cfg.app.notifications and (mk.new_limited_alerts or (mk.watch_alerts and bool(mk.watchlist))
+                                                    or (mk.track_alerts and bool(mk.tracked_players)))
 
 
 def service_wanted(cfg) -> bool:

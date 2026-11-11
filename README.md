@@ -147,7 +147,7 @@ How it works, and what changes:
 
 The **Market** tab has two parts:
 - **Items:** search any Rolimons-tracked limited and open it to see its value, RAP, demand, trend, current price and projected/hyped/rare flags. Tap **Watch** and pick a discount (say 15%): you get an alert when someone lists it at least that much under its value. Listings far above value are ignored.
-- **Players:** look up any Roblox username to see their value, RAP, item count, value chart and most valuable items, with links to their Roblox and Rolimons pages.
+- **Players:** look up any Roblox username to see their value, RAP, item count, value chart and most valuable items, with links to their Roblox and Rolimons pages. Under the search box are lists of people: **Richest** (the Rolimons leaderboard), **Traders** (people posting Rolimons trade ads right now; ads involving items you own or watch come first) and **Verified** (verified accounts among those). **Track** someone (up to 20) to get alerts when they post a trade ad or their value changes by 5% or more. The app never follows or friend-requests anyone for you: that's your own tap on their Roblox profile.
 
 **New limited alerts** (Settings → New limiteds and watchlist) notify you about new limiteds in the Roblox catalog, with the price, number of copies, creator and description; tap to open the item on Roblox. New UGC limiteds come out many times a day, so you can limit alerts to verified creators, a maximum price and a maximum number of copies. New limited alerts and watchlist deals use public data: they don't need **Read my trades directly** or a Roblox sign-in, and they work with the app closed.
 

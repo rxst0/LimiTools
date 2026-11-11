@@ -75,3 +75,12 @@ def test_check_speed_setting():
     assert not [e for e in validate_config(cfg) if "check_minutes" in e]
     cfg.app.check_minutes = 7
     assert any("check_minutes" in e for e in validate_config(cfg))
+
+
+def test_tracked_players_round_trip_and_limit():
+    import json
+    cfg = config_from_dict({"market": {"tracked_players": {"156": "builderman"}}})
+    assert cfg.market.tracked_players == {156: "builderman"} and cfg.market.track_alerts is True
+    assert config_from_dict(json.loads(json.dumps(asdict(cfg)))).market == cfg.market
+    cfg.market.tracked_players = {i: f"p{i}" for i in range(21)}
+    assert any("track at most" in e for e in validate_config(cfg))

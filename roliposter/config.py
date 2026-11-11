@@ -82,10 +82,13 @@ class MarketSettings:
     max_copies: int = 0              # 0 = any stock
     watch_alerts: bool = True        # alerts for watched items (only when the watchlist has items)
     watchlist: dict[int, float] = field(default_factory=dict)  # item ID -> minimum % under value
+    tracked_players: dict[int, str] = field(default_factory=dict)  # Roblox user ID -> name (Discover > Track)
+    track_alerts: bool = True        # alerts when a tracked player posts a trade ad or their value moves
 
 
 OPTIONAL_TABS = ("trades", "items", "market", "auto", "history")  # Ads and Settings always stay
-CHECK_SPEEDS = {2: "Fast", 5: "Normal", 15: "Battery saver"}  # minutes between background checks
+CHECK_SPEEDS = {2: "Fast", 5: "Normal", 15: "Battery saver"}
+MAX_TRACKED = 20  # tracked players (Market > Players > Track)  # minutes between background checks
 
 
 @dataclass
@@ -206,7 +209,9 @@ def config_from_dict(data: dict) -> Config:
                 new_limited_alerts=bool(mk.get("new_limited_alerts", False)),
                 verified_only=bool(mk.get("verified_only", False)), max_price=int(mk.get("max_price", 0) or 0),
                 max_copies=int(mk.get("max_copies", 0) or 0), watch_alerts=bool(mk.get("watch_alerts", True)),
-                watchlist={int(k): float(v) for k, v in (mk.get("watchlist") or {}).items()}),
+                watchlist={int(k): float(v) for k, v in (mk.get("watchlist") or {}).items()},
+                tracked_players={int(k): str(v) for k, v in (mk.get("tracked_players") or {}).items()},
+                track_alerts=bool(mk.get("track_alerts", True))),
             ads=ads,
         )
     except (TypeError, ValueError, AttributeError) as e:
@@ -265,6 +270,8 @@ def validate_config(cfg: Config) -> list[str]:
     mk = cfg.market
     if mk.max_price < 0 or mk.max_copies < 0:
         errors.append("New limited alerts: the maximum price and copies can't be negative.")
+    if len(mk.tracked_players) > MAX_TRACKED:
+        errors.append(f"You can track at most {MAX_TRACKED} players.")
     if any(not 0 < d < 100 for d in mk.watchlist.values()):
         errors.append("Watchlist: the discount must be between 1% and 99%.")
     sa = cfg.social_alerts
